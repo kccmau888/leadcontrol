@@ -7,6 +7,6 @@
   "upload_source_maps": true,
   "observability": {
     "enabled": true
-  }
+  },
   "no_bundle": true
 }
