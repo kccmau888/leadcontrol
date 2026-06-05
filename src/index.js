@@ -1,5 +1,5 @@
+  export default {
   async fetch(request, env, ctx) {
-    // check if it is from Github
     // Handle favicon
     if (request.method === 'GET' && new URL(request.url).pathname === '/favicon.ico') {
       return new Response(null, { status: 204 });
@@ -1380,12 +1380,15 @@ async function handleConversionTrend(env, request) {
     const dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
     
-    // Build date filter
+    // Build date filter with HK timezone
     let dateCondition = '';
     let params = [];
     
+    // Convert filter dates to UTC range (since created_at is UTC)
     if (dateFrom && dateTo) {
+      // Filter uses UTC, but for HK date ranges, convert to UTC
       dateCondition = ' AND datetime(created_at) >= datetime(?) AND datetime(created_at) <= datetime(?)';
+      // Convert HK date to UTC start/end
       params.push(`${dateFrom} 00:00:00+08:00`, `${dateTo} 23:59:59+08:00`);
     } else if (dateFrom) {
       dateCondition = ' AND datetime(created_at) >= datetime(?)';
@@ -3293,3 +3296,4 @@ render();
   return new Response(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' }
   });
+}
