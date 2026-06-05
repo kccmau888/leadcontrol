@@ -1,5 +1,6 @@
 export default {
   async fetch(request, env, ctx) {
+    // check if it is from Github
     // Handle favicon
     if (request.method === 'GET' && new URL(request.url).pathname === '/favicon.ico') {
       return new Response(null, { status: 204 });
@@ -1385,30 +1386,31 @@ async function handleConversionTrend(env, request) {
     let params = [];
     
     if (dateFrom && dateTo) {
-      dateCondition = ' AND date(created_at) >= date(?) AND date(created_at) <= date(?)';
-      params.push(dateFrom, dateTo);
+      dateCondition = ' AND datetime(created_at) >= datetime(?) AND datetime(created_at) <= datetime(?)';
+      params.push(`${dateFrom} 00:00:00+08:00`, `${dateTo} 23:59:59+08:00`);
     } else if (dateFrom) {
-      dateCondition = ' AND date(created_at) >= date(?)';
-      params.push(dateFrom);
+      dateCondition = ' AND datetime(created_at) >= datetime(?)';
+      params.push(`${dateFrom} 00:00:00+08:00`);
     } else if (dateTo) {
-      dateCondition = ' AND date(created_at) <= date(?)';
-      params.push(dateTo);
+      dateCondition = ' AND datetime(created_at) <= datetime(?)';
+      params.push(`${dateTo} 23:59:59+08:00`);
     }
     
-    // Determine SQL grouping based on groupBy parameter
+    // Determine SQL grouping using HK time
     let dateFormat, orderBy;
     switch (groupBy) {
       case 'week':
-        dateFormat = `strftime('%Y', created_at) || '-W' || strftime('%W', created_at)`;
-        orderBy = `min(date(created_at))`;
+        // Group by week in HK time
+        dateFormat = `strftime('%Y', datetime(created_at, '+8 hours')) || '-W' || strftime('%W', datetime(created_at, '+8 hours'))`;
+        orderBy = `min(datetime(created_at, '+8 hours'))`;
         break;
       case 'month':
-        dateFormat = `strftime('%Y-%m', created_at)`;
-        orderBy = `min(date(created_at))`;
+        dateFormat = `strftime('%Y-%m', datetime(created_at, '+8 hours'))`;
+        orderBy = `min(datetime(created_at, '+8 hours'))`;
         break;
-      default:
-        dateFormat = `date(created_at)`;
-        orderBy = `date(created_at)`;
+      default: // day
+        dateFormat = `date(datetime(created_at, '+8 hours'))`;
+        orderBy = `date(datetime(created_at, '+8 hours'))`;
     }
     
     const sql = `
