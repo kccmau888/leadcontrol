@@ -8,4 +8,5 @@
   "observability": {
     "enabled": true
   }
+  "no_bundle": true
 }
