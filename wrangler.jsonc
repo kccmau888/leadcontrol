@@ -8,7 +8,7 @@
   "observability": {
     "enabled": true
   },
-  "no_bundle": true
+  "no_bundle": true,
   "d1_databases": [
     {
       "binding": "lead_db",
