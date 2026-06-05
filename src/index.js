@@ -1416,13 +1416,21 @@ async function handleConversionTrend(env, request) {
     }
     
     const sql = `
+      WITH valid_conversions AS (
+      SELECT 
+        created_at,
+        gclid,
+        ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
+      FROM leads
+      WHERE value > 0
+        ${dateCondition}
+      )
       SELECT 
         ${dateFormat} as period,
         SUM(CASE WHEN (gclid IS NOT NULL AND gclid != '') THEN 1 ELSE 0 END) as paid_count,
         SUM(CASE WHEN (gclid IS NULL OR gclid = '') THEN 1 ELSE 0 END) as organic_count
-      FROM leads
-      WHERE value > 0
-        ${dateCondition}
+      FROM valid_conversions
+      WHERE rn = 1
       GROUP BY period
       ORDER BY ${orderBy} ASC
     `;
