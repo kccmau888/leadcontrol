@@ -1,4 +1,4 @@
-  export default {
+export default {
   async fetch(request, env, ctx) {
     // Handle favicon
     if (request.method === 'GET' && new URL(request.url).pathname === '/favicon.ico') {

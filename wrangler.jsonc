@@ -9,4 +9,17 @@
     "enabled": true
   },
   "no_bundle": true
+  "d1_databases": [
+    {
+      "binding": "lead_db",
+      "database_name": "lead_db",
+      "database_id": "f177d9fb-7f19-4061-9a6a-8108d08ba0e3"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "AGENT_PHONE_MAP",
+      "id": "a619c74306f042f9a4212c7bef4137db"
+    }
+  ]
 }
