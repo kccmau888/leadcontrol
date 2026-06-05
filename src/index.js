@@ -1,4 +1,3 @@
-export default {
   async fetch(request, env, ctx) {
     // check if it is from Github
     // Handle favicon
@@ -3294,4 +3293,3 @@ render();
   return new Response(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' }
   });
-}
