@@ -1413,8 +1413,7 @@ async function handleAdminPage(env) {
     .button-bar { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e0e0e0; }
    .stats-and-hotline-row {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
+    align-items: flex-end;
     gap: 20px;
     margin-bottom: 20px;
     flex-wrap: wrap;
