@@ -2796,9 +2796,7 @@ function render() {
 '<button class="btn btn-danger" onclick="logout()">退出登录</button>' +
 '</div>' +
 '</div>' +
-
 '<div class="stats-and-hotline-row">' +
-'<div id="statsPanel" class="stats-grid">加载中...</div>' +
 '<div class="chart-container">' +
 '<div class="chart-header">' +
 '<h4>📈 有效转化趋势 (付费 vs 自然)</h4>' +
@@ -2815,7 +2813,8 @@ function render() {
 '<div class="hotline-row">' +
 '<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>' +
 '<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>' +
-'<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>' +
+'<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>' +
+'<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>' +
 '</div>' +
 '</div>' +
 '</div>' +
