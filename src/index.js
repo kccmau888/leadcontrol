@@ -28,20 +28,12 @@ export default {
       return handleAdminBatchUpdate(request, env);
     }
     
-    if (path === '/api/stats' && request.method === 'GET') {
-      return handleAdminGetStats(env);
-    }
-    
     if (path === '/api/export' && request.method === 'GET') {
       return handleAdminExport(request, env);
     }
 
     if (path === '/api/reinstatement-leads' && request.method === 'GET') {
       return handleGetReinstatementLeads(request, env);
-    }
-    
-    if (path === '/api/submit-reinstatement' && request.method === 'POST') {
-      return handleSubmitReinstatement(request, env);
     }
 
     // Hotline handlers
@@ -720,35 +712,6 @@ async function handleAdminLogin(request, env) {
 }
 
 // ============================================
-// Admin Stats
-// ============================================
-
-async function handleAdminGetStats(env) {
-  try {
-    const statusStmt = await env.lead_db.prepare(`SELECT status, COUNT(*) as count FROM leads GROUP BY status`).all();
-    const statusCounts = {};
-    for (const row of statusStmt.results) statusCounts[row.status] = row.count;
-    
-    const today = new Date().toISOString().slice(0, 10);
-    const todayStmt = await env.lead_db.prepare(`SELECT COUNT(*) as count FROM leads WHERE date(created_at) = date(?)`).bind(today).first();
-    const totalStmt = await env.lead_db.prepare(`SELECT COUNT(*) as count FROM leads`).first();
-    
-    return new Response(JSON.stringify({
-      success: true,
-      stats: {
-        pending: statusCounts.pending || 0,
-        verified: statusCounts.verified || 0,
-        rejected: statusCounts.rejected || 0,
-        total: totalStmt.count || 0,
-        today: todayStmt.count || 0
-      }
-    }), { headers: { 'Content-Type': 'application/json' } });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-  }
-}
-
-// ============================================
 // Get Client Leads
 // ============================================
 
@@ -1124,113 +1087,6 @@ async function handleAdminExport(request, env) {
 // ============================================
 // Reinstatement Section
 // ============================================
-
-async function handleSubmitReinstatement(request, env) {
-  try {
-    const { leads } = await request.json();
-    
-    if (!leads || !Array.isArray(leads) || leads.length === 0) {
-      return new Response(JSON.stringify({ success: false, error: "没有选择客户" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    
-    const telId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CONVERSION_ACTION_ID_tel");
-    const formId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CONVERSION_ACTION_ID_form");
-    const msgId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CONVERSION_ACTION_ID_msg");
-    const customerId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CUSTOMER_ID");
-    const developerToken = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_DEVELOPER_TOKEN");
-    const loginCustomerId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID");
-    
-    const conversionActionMap = {
-      'tel': telId,
-      'form': formId,
-      'msg': msgId
-    };
-    
-    let accessToken;
-    try {
-      accessToken = await getGoogleAdsAccessToken(env);
-    } catch (tokenError) {
-      return new Response(JSON.stringify({ 
-        success: false, 
-        error: "无法获取Google Ads认证: " + tokenError.message 
-      }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    
-    const results = [];
-    const successfulIds = [];
-    
-    for (let i = 0; i < leads.length; i++) {
-      const lead = leads[i];
-      const actionKey = lead.conversion_action || 'form';
-      const actionId = conversionActionMap[actionKey];
-      
-      if (!actionId) {
-        results.push({ 
-          client_id: lead.client_id, 
-          success: false, 
-          error: "未知的转化类型: " + actionKey 
-        });
-        continue;
-      }
-      
-      try {
-        const adjustmentResult = await createSingleConversionAdjustment(
-          accessToken, customerId, actionId, lead.client_id,
-          lead.value, lead.verified_at, developerToken, loginCustomerId
-        );
-        
-        if (adjustmentResult.results && adjustmentResult.results[0]) {
-          successfulIds.push(lead.client_id);
-          results.push({ client_id: lead.client_id, success: true, message: "提交成功" });
-        } else if (adjustmentResult.error) {
-          results.push({ client_id: lead.client_id, success: false, error: adjustmentResult.error.message });
-        } else {
-          results.push({ client_id: lead.client_id, success: false, error: "未知错误" });
-        }
-      } catch (leadError) {
-        results.push({ client_id: lead.client_id, success: false, error: leadError.message });
-      }
-    }
-    
-    if (successfulIds.length > 0) {
-      const placeholders = successfulIds.map(() => "?").join(",");
-      const now = new Date().toISOString();
-      await env.lead_db.prepare(`
-        UPDATE leads 
-        SET reinstatement_submitted_at = ?
-        WHERE client_id IN (${placeholders})
-      `).bind(now, ...successfulIds).run();
-    }
-    
-    const successCount = results.filter(r => r.success).length;
-    const failCount = results.filter(r => !r.success).length;
-    
-    return new Response(JSON.stringify({
-      success: true,
-      submitted: successCount,
-      failed: failCount,
-      total: leads.length,
-      results: results,
-      message: `${successCount} 个客户提交成功，${failCount} 个失败`
-    }), {
-      headers: { "Content-Type": "application/json" }
-    });
-    
-  } catch (error) {
-    console.error("Submit reinstatement error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
 async function getGoogleAdsAccessToken(env) {
   const clientId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CLIENT_ID");
   const clientSecret = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CLIENT_SECRET");
@@ -1926,23 +1782,6 @@ function exportAllLeads() {
     });
 }
 
-function loadStats() {
-  fetch('/api/stats')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success) {
-        var html = '<div class="stats-grid">';
-        html += '<div class="stat-card"><h3>待处理</h3><div class="number">' + (data.stats.pending || 0) + '</div></div>';
-        html += '<div class="stat-card"><h3>已验证</h3><div class="number">' + (data.stats.verified || 0) + '</div></div>';
-        html += '<div class="stat-card"><h3>已拒绝</h3><div class="number">' + (data.stats.rejected || 0) + '</div></div>';
-        html += '<div class="stat-card"><h3>今日新增</h3><div class="number">' + (data.stats.today || 0) + '</div></div>';
-        html += '<div class="stat-card"><h3>总计</h3><div class="number">' + (data.stats.total || 0) + '</div></div>';
-        html += '</div>';
-        document.getElementById('statsPanel').innerHTML = html;
-      }
-    });
-}
-
 function loadFilters() {
   fetch('/api/leads?limit=1')
     .then(function(r) { return r.json(); })
@@ -2453,7 +2292,6 @@ function updateLead(id) {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      loadStats();
       loadLeads();
     } else {
       alert('操作失败: ' + data.error);
@@ -2670,7 +2508,7 @@ function updateAllHotlineSelections() {
 
 function showReinstatementPage() {
   var app = document.getElementById("app");
-  app.innerHTML = "<div class='admin-box'><div style='display:flex;justify-content:space-between;margin-bottom:20px'><h2>Google Ads Reinstatement - 合格线索</h2><button class='btn btn-danger' onclick='hideReinstatementPage()'>返回主页面</button></div><div style='margin-bottom:20px'><button class='btn btn-primary' onclick='loadReinstatementLeads()'>刷新列表</button> <button class='btn btn-danger' onclick='submitReinstatement()'>提交选中的线索到 Google Ads</button> <button class='btn btn-success' onclick='exportToGoogleSheets()' style='background:#25D366;'>📤 导出选中到 Google Sheets</button> <span id='reinCountSpan' style='margin-left:20px'></span></div><div id='reinStatsPanel' style='margin-bottom:20px'></div><div id='reinTablePanel'>加载中...</div></div>";
+  app.innerHTML = "<div class='admin-box'><div style='display:flex;justify-content:space-between;margin-bottom:20px'><h2>Google Ads Reinstatement - 合格线索</h2><button class='btn btn-danger' onclick='hideReinstatementPage()'>返回主页面</button></div><div style='margin-bottom:20px'><button class='btn btn-primary' onclick='loadReinstatementLeads()'>刷新列表</button><button class='btn btn-success' onclick='exportToGoogleSheets()' style='background:#25D366;'>📤 导出选中到 Google Sheets</button> <span id='reinCountSpan' style='margin-left:20px'></span></div><div id='reinStatsPanel' style='margin-bottom:20px'></div><div id='reinTablePanel'>加载中...</div></div>";
   loadReinstatementLeads();
 }
 
@@ -2715,7 +2553,7 @@ function renderReinstatementStats() {
   var h = "<div style='display:flex;gap:15px;margin-bottom:20px;flex-wrap:wrap'>";
   h += "<div style='background:#e8f5e9;padding:15px;border-radius:8px;min-width:120px;text-align:center'><div style='font-size:24px;font-weight:bold;color:#4caf50'>" + total + "</div><div style='font-size:12px;color:#666'>总线索</div></div>";
   h += "<div style='background:#fff3e0;padding:15px;border-radius:8px;min-width:120px;text-align:center'><div style='font-size:24px;font-weight:bold;color:#4caf50'>" + qualified + "</div><div style='font-size:12px;color:#666'>合格线索</div></div>";
-  h += "<div style='background:#fff3e0;padding:15px;border-radius:8px;min-width:120px;text-align:center'><div style='font-size:24px;font-weight:bold;color:#ff9800'>" + pending2days + "</div><div style='font-size:12px;color:#666'>等待2天</div></div>";
+  h += "<div style='background:#fff3e0;padding:15px;border-radius:8px;min-width:120px;text-align:center'><div style='font-size:24px;font-weight:bold;color:#ff9800'>" + pending2days + "</div><div style='font-size:12px;color:#666'>等待1天</div></div>";
   h += "</div>";
   c.innerHTML = h;
 }
@@ -2798,7 +2636,6 @@ function updateReinCount() {
   if (span) span.innerHTML = "已选择 " + selectedReinIds.size + " 条";
 }
 
-
 function showSubmissionDetails(selectedLeadsData, callback) {
   var modal = document.createElement("div");
   modal.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;justify-content:center;align-items:center";
@@ -2862,218 +2699,6 @@ content += '</thead><tbody>';
     }
   };
 }
-
-function submitReinstatement() {
-  if (selectedReinIds.size === 0) {
-    alert("请先选择要提交的客户");
-    return;
-  }
-  
-  // COLLECT selected leads data
-  var selectedLeadsData = [];
-  for (var i = 0; i < reinstatementLeads.length; i++) {
-    var lead = reinstatementLeads[i];
-    if (selectedReinIds.has(lead.id)) {
-      var conversionAction = "";
-      if (lead.click_type === "tel") {
-        conversionAction = "tel";
-      } else if (lead.click_type === "form") {
-        conversionAction = "form";
-      } else if (lead.click_type === "whatsapp" || lead.click_type === "wechat" || lead.click_type === "messenger") {
-        conversionAction = "msg";
-      } else {
-        conversionAction = "form";
-      }
-      
-      selectedLeadsData.push({
-        client_id: lead.client_id,
-        value: lead.value,
-        click_type: lead.click_type,
-        conversion_action: conversionAction,
-        verified_at: lead.verified_at,
-        created_at: lead.created_at
-      });
-    }
-  }
-  
-  if (selectedLeadsData.length === 0) {
-    alert("没有找到合格的线索数据");
-    return;
-  }
-  
-  showSubmissionDetails(selectedLeadsData, function(confirmed) {
-    if (!confirmed) return;
-    
-    var modal = document.createElement("div");
-    modal.id = "progressModal";
-    modal.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;display:flex;justify-content:center;align-items:center";
-    modal.innerHTML = '<div style="background:white;border-radius:12px;width:500px;max-width:90%;max-height:80%;overflow:auto;padding:20px"><h3 style="margin-bottom:20px">正在提交到 Google Ads...</h3><div id="progressList" style="margin-bottom:20px"></div><div id="progressSummary" style="margin-top:20px;padding-top:10px;border-top:1px solid #eee"></div><button id="closeProgressBtn" style="display:none;margin-top:20px;padding:8px 16px;background:#667eea;color:white;border:none;border-radius:6px;cursor:pointer">关闭</button></div>';
-    document.body.appendChild(modal);
-    
-    var progressList = document.getElementById("progressList");
-    var progressSummary = document.getElementById("progressSummary");
-    var closeBtn = document.getElementById("closeProgressBtn");
-    
-    // Load conversion IDs first
-    fetch("/api/get-conversion-ids")
-      .then(function(r) { return r.json(); })
-      .then(function(envData) {
-        // Create progress list items
-        for (var i = 0; i < selectedLeadsData.length; i++) {
-          var lead = selectedLeadsData[i];
-          var div = document.createElement("div");
-          div.id = "progress_" + lead.client_id;
-          div.style.cssText = "padding:8px;margin:5px 0;border-radius:6px;background:#f5f5f5";
-          
-          var conversionId = "";
-          if (lead.conversion_action === "tel") conversionId = envData.ids.tel;
-          else if (lead.conversion_action === "form") conversionId = envData.ids.form;
-          else if (lead.conversion_action === "msg") conversionId = envData.ids.msg;
-          
-          div.innerHTML = '<span style="font-family:monospace;font-size:12px">' + lead.client_id + '</span> (Conversion ID: ' + (conversionId || "未设置") + ') - $' + lead.value + ' <span style="float:right">⏳ 等待中...</span>';
-          progressList.appendChild(div);
-        }
-        
-        // Store envData for later use
-        window.conversionEnvData = envData;
-        
-        progressSummary.innerHTML = "处理中... 0 / " + selectedLeadsData.length;
-        
-        var completed = 0;
-        var successCount = 0;
-        var failCount = 0;
-        var detailedResults = [];
-        
-        function updateProgress(clientId, status, message, isSuccess, details) {
-          var div = document.getElementById("progress_" + clientId);
-          if (div && !div.getAttribute("data-completed")) {
-            if (status === "processing") {
-              for (var i = 0; i < selectedLeadsData.length; i++) {
-                if (selectedLeadsData[i].client_id === clientId) {
-                  var lead = selectedLeadsData[i];
-                  var conversionId = "";
-                  if (lead.conversion_action === "tel") conversionId = (window.conversionEnvData ? window.conversionEnvData.ids.tel : "加载中");
-                  else if (lead.conversion_action === "form") conversionId = (window.conversionEnvData ? window.conversionEnvData.ids.form : "加载中");
-                  else if (lead.conversion_action === "msg") conversionId = (window.conversionEnvData ? window.conversionEnvData.ids.msg : "加载中");
-                  div.innerHTML = '<span style="font-family:monospace;font-size:12px">' + clientId + '</span> (Conversion ID: ' + conversionId + ') - $' + lead.value + ' <span style="float:right">🔄 提交中...</span>';
-                }
-              }
-              return;
-            }
-            
-            div.setAttribute("data-completed", "true");
-            completed++;
-            if (isSuccess) successCount++;
-            else failCount++;
-            
-            if (details) detailedResults.push(details);
-            
-            var statusText = "";
-            if (status === "success") {
-              statusText = "✅ " + message;
-              div.style.background = "#d4edda";
-            } else if (status === "failed") {
-              statusText = "❌ " + message;
-              div.style.background = "#f8d7da";
-            }
-            
-            for (var i = 0; i < selectedLeadsData.length; i++) {
-              if (selectedLeadsData[i].client_id === clientId) {
-                var lead = selectedLeadsData[i];
-                var conversionId = "";
-                if (lead.conversion_action === "tel") conversionId = (window.conversionEnvData ? window.conversionEnvData.ids.tel : "未知");
-                else if (lead.conversion_action === "form") conversionId = (window.conversionEnvData ? window.conversionEnvData.ids.form : "未知");
-                else if (lead.conversion_action === "msg") conversionId = (window.conversionEnvData ? window.conversionEnvData.ids.msg : "未知");
-                div.innerHTML = '<span style="font-family:monospace;font-size:12px">' + clientId + '</span> (Conversion ID: ' + conversionId + ') - $' + lead.value + ' <span style="float:right">' + statusText + '</span>';
-                break;
-              }
-            }
-            
-            progressSummary.innerHTML = "处理中... " + completed + " / " + selectedLeadsData.length + "<br>✅ 成功: " + successCount + " | ❌ 失败: " + failCount;
-            
-            if (completed === selectedLeadsData.length) {
-              var finalMsg = "提交完成!</br></br>成功: " + successCount + " 个客户  失败: " + failCount + " 个客户";
-              if (failCount > 0) {
-                finalMsg += "</br></br>失败的客户: ";
-                for (var j = 0; j < detailedResults.length; j++) {
-                  if (!detailedResults[j].success) {
-                    finalMsg += "• " + detailedResults[j].client_id + ": " + detailedResults[j].error + "</br>";
-                  }
-                }
-              }
-              alert(finalMsg);
-              progressSummary.innerHTML = "完成! 成功: " + successCount + " | 失败: " + failCount;
-              closeBtn.style.display = "inline-block";
-            }
-          }
-        }
-        
-        function getValue(clientId) {
-          for (var j = 0; j < selectedLeadsData.length; j++) {
-            if (selectedLeadsData[j].client_id === clientId) return selectedLeadsData[j].value;
-          }
-          return 0;
-        }
-        
-        function sendNext(index) {
-          if (index >= selectedLeadsData.length) return;
-          
-          var lead = selectedLeadsData[index];
-          updateProgress(lead.client_id, "processing", "", false);
-          
-          var requestBody = {
-            leads: [{
-              client_id: lead.client_id,
-              value: lead.value,
-              click_type: lead.click_type,
-              conversion_action: lead.conversion_action,
-              verified_at: lead.verified_at
-            }]
-          };
-          
-          fetch("/api/submit-reinstatement", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(requestBody)
-          })
-          .then(function(r) { return r.json(); })
-          .then(function(data) {
-            if (data.success && data.results && data.results[0]) {
-              var result = data.results[0];
-              if (result.success) {
-                updateProgress(lead.client_id, "success", result.message || "提交成功", true, result);
-              } else {
-                updateProgress(lead.client_id, "failed", result.error || "提交失败", false, result);
-              }
-            } else if (data.success && data.submitted) {
-              updateProgress(lead.client_id, "success", "提交成功", true, { client_id: lead.client_id, success: true });
-            } else {
-              updateProgress(lead.client_id, "failed", data.error || "未知错误", false, { client_id: lead.client_id, success: false, error: data.error });
-            }
-            sendNext(index + 1);
-          })
-          .catch(function(err) {
-            updateProgress(lead.client_id, "failed", err.message, false, { client_id: lead.client_id, success: false, error: err.message });
-            sendNext(index + 1);
-          });
-        }
-        
-        closeBtn.onclick = function() {
-          modal.remove();
-          selectedReinIds.clear();
-          loadReinstatementLeads();
-        };
-        
-        sendNext(0);
-      })
-      .catch(function(err) {
-        alert("无法加载转换ID: " + err.message);
-        if (closeBtn) closeBtn.click();
-        else modal.remove();
-      });
-  });
-}
-
 
 // ============================================
 // Login / Logout / Render
@@ -3206,7 +2831,6 @@ for (var i = 0; i < groupBtns.length; i++) {
     setChartGroup(group);
   });
 }   
-loadStats();
 loadCombinedConversionStats();  
 loadConversionTrend();
 loadFilters();
@@ -3304,6 +2928,4 @@ render();
   return new Response(html, {
     headers: { 'Content-Type': 'text/html; charset=utf-8' }
   });
-}/ /   t r i g g e r   d e p l y  
- / /   t r i g g e r   d e p l o y  
- 
+}
