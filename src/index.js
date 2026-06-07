@@ -1,695 +1,1091 @@
 export default {
   async fetch(request, env, ctx) {
-    // Handle favicon 2
-    if (request.method === 'GET' && new URL(request.url).pathname === '/favicon.ico') {
-      return new Response(null, { status: 204 });
-    }
-
     const url = new URL(request.url);
     const path = url.pathname;
     
-    if ((path === '/' || path === '') && request.method === 'GET') {
+    // ============================================
+    // 1. 验证页面路由
+    // ============================================
+    if (path === '/test-districts' && request.method === 'GET') {
+      const districtsJson = await env.AGENT_PHONE_MAP.get('districts');
+      return new Response(JSON.stringify({ raw: districtsJson, parsed: districtsJson ? JSON.parse(districtsJson) : null }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    if (path === '/verify' && request.method === 'GET') {
+      return handleVerifyPage(env, url, request);
+    }
+    
+    if (path === '/verify' && request.method === 'POST') {
+      return handleVerifyAction(request, env);
+    }
+    
+    // ============================================
+    // 2. 管理后台路由
+    // ============================================
+    if (path === '/admin' && request.method === 'GET') {
       return handleAdminPage(env);
     }
     
-    if (path === '/api/login' && request.method === 'POST') {
+    if (path === '/admin/api/login' && request.method === 'POST') {
       return handleAdminLogin(request, env);
     }
     
-    if (path === '/api/leads' && request.method === 'GET') {
+    if (path === '/admin/api/leads' && request.method === 'GET') {
       return handleAdminGetLeads(request, env);
     }
     
-    if (path === '/api/client-leads' && request.method === 'GET') {
-      return handleGetClientLeads(request, env);
-    }
-    
-    if (path === '/api/leads/batch-update' && request.method === 'POST') {
+    if (path === '/admin/api/leads/batch-update' && request.method === 'POST') {
       return handleAdminBatchUpdate(request, env);
     }
     
-    if (path === '/api/export' && request.method === 'GET') {
+    if (path === '/admin/api/stats' && request.method === 'GET') {
+      return handleAdminGetStats(env);
+    }
+    
+    if (path === '/admin/api/export' && request.method === 'GET') {
       return handleAdminExport(request, env);
     }
-
-    if (path === '/api/reinstatement-leads' && request.method === 'GET') {
-      return handleGetReinstatementLeads(request, env);
+    
+    // ============================================
+    // 3. 原有的 API 路由（接收 GTM 数据）
+    // ============================================
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        },
+      });
     }
 
-    // Hotline handlers
-    if (path === '/api/get-hotline-tel' && request.method === 'GET') {
-      return handleGetHotlineTel(request, env);
-    }
-    if (path === '/api/update-hotline-tel' && request.method === 'POST') {
-      return handleUpdateHotlineTel(request, env);
-    }
-    if (path === '/api/get-hotline-form' && request.method === 'GET') {
-      return handleGetHotlineForm(request, env);
-    }
-    if (path === '/api/update-hotline-form' && request.method === 'POST') {
-      return handleUpdateHotlineForm(request, env);
-    }
-    if (path === '/api/get-hotline-msg' && request.method === 'GET') {
-      return handleGetHotlineMsg(request, env);
-    }
-    if (path === '/api/update-hotline-msg' && request.method === 'POST') {
-      return handleUpdateHotlineMsg(request, env);
+    if (request.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+        status: 405,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
     }
 
-    // Agent management
-    if (path === '/api/get-agents' && request.method === 'GET') {
-      return handleGetAgents(request, env);
+    try {
+      const data = await request.json();
+      
+      const client_id = String(data.client_id || 'unknown');
+      const rent = String(data.rent || '');
+      const property_price = String(data.property_price || '');
+      const size = String(data.size || '');
+      const district = String(data.district || '');
+      const property_type = String(data.property_type || '');
+      const agent_code = String((data.agent || '').toLowerCase());
+      const click_type = String(data.click_type || '');
+      const page_location = String(data.page_location || '');
+      const landing_page = String(data.landing_page || '');
+      
+      const now = new Date();
+      const isoTime = now.toISOString();
+      const formattedTime = now.toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' });
+      
+      const utm_source = String(data.utm_source || '');
+      const utm_medium = String(data.utm_medium || '');
+      const utm_campaign = String(data.utm_campaign || '');
+      const utm_term = String(data.utm_term || '');
+      const utm_content = String(data.utm_content || '');
+      const gclid = String(data.gclid || '');
+      const referrer = String(data.referrer || '');
+      
+      const traffic_type = String(data.traffic_type || '');
+      const traffic_source = String(data.traffic_source || '');
+      const traffic_detail = String(data.traffic_detail || '');
+
+      // ============================================
+      // 提取搜索词
+      // ============================================
+      let search_query = '';
+      if (referrer && referrer.includes('google.com')) {
+        try {
+          const referrerUrl = new URL(referrer);
+          search_query = referrerUrl.searchParams.get('q') || '';
+          if (search_query) search_query = decodeURIComponent(search_query);
+        } catch (e) {}
+      }
+      if (landing_page && landing_page.includes('?') && !search_query) {
+        try {
+          const landingUrl = new URL(landing_page);
+          search_query = landingUrl.searchParams.get('q') || '';
+          if (search_query) search_query = decodeURIComponent(search_query);
+        } catch (e) {}
+      }
+
+      // ============================================
+      // 0. 查询同一 client_id 的历史记录
+      // ============================================
+      let historyRecords = [];
+      try {
+        const historyStmt = await env.lead_db.prepare(`
+          SELECT id, agent_name, click_type, status, created_at, verified_at, verified_by
+          FROM leads WHERE client_id = ? ORDER BY id ASC LIMIT 10
+        `);
+        const { results } = await historyStmt.bind(client_id).all();
+        historyRecords = results;
+        console.log(`📋 Found ${historyRecords.length} history record(s) for client: ${client_id}`);
+      } catch (historyError) {
+        console.error('History query error:', historyError);
+      }
+
+      // ============================================
+      // 1. 获取代理电话和名称（支持 general_enquiry 特殊逻辑）
+      // ============================================
+      const DEFAULT_HOTLINE = env.DEFAULT_HOTLINE || '+85291333030';
+      let agent_phone = DEFAULT_HOTLINE;
+      let agent_found = false;
+      let effective_agent_name = agent_code;  // For database storage, defaults to GTM value
+      
+      // Special handling for general_enquiry
+           // Special handling for general_enquiry
+      if (agent_code === 'general_enquiry') {
+        let kvKey;
+        if (click_type === 'tel') {
+          kvKey = 'general_enquiry';
+        } else if (click_type === 'form') {
+          kvKey = 'general_enquiry_form';
+        } else {
+          kvKey = 'general_enquiry_msg';
+        }
+        try {
+          const kvValue = await env.AGENT_PHONE_MAP.get(kvKey);
+          if (kvValue) {
+            let parsedValue;
+            if (typeof kvValue === 'string' && kvValue.startsWith('[')) {
+              parsedValue = JSON.parse(kvValue);
+            } else {
+              parsedValue = kvValue;
+            }
+            if (Array.isArray(parsedValue) && parsedValue.length >= 2) {
+              effective_agent_name = parsedValue[0];   // Agent code name (e.g., "kevin_chan")
+              agent_phone = parsedValue[1];            // Phone number
+              agent_found = true;
+              console.log(`✅ general_enquiry (${click_type}) → Key: ${kvKey}, Agent: ${effective_agent_name}, Phone: ${agent_phone}`);
+            } else {
+              console.log(`⚠️ Invalid format for ${kvKey}, expected JSON array ["agent_name","phone"]`);
+            }
+          } else {
+            console.log(`⚠️ KV key ${kvKey} not found, using defaults`);
+          }
+        } catch (e) {
+          console.error(`KV error for ${kvKey}:`, e);
+        }
+      } else if (agent_code) {
+        // Regular agent: KV stores just the phone number
+        try {
+          const kvPhone = await env.AGENT_PHONE_MAP.get(agent_code);
+          if (kvPhone) {
+            agent_phone = kvPhone;
+            agent_found = true;
+            console.log(`✅ Agent found: ${agent_code} -> ${agent_phone}`);
+          } else {
+            console.log(`⚠️ Agent not found in KV: ${agent_code}, using default`);
+          }
+        } catch (kvError) {
+          console.error(`KV error for ${agent_code}:`, kvError);
+        }
+      } else if (agent_code) {
+        // Regular agent: KV stores just the phone number
+        try {
+          const kvPhone = await env.AGENT_PHONE_MAP.get(agent_code);
+          if (kvPhone) {
+            agent_phone = kvPhone;
+            agent_found = true;
+            console.log(`✅ Agent found: ${agent_code} -> ${agent_phone}`);
+          } else {
+            console.log(`⚠️ Agent not found in KV: ${agent_code}, using default`);
+          }
+        } catch (kvError) {
+          console.error(`KV error for ${agent_code}:`, kvError);
+        }
+      }
+
+      if (!agent_phone.startsWith('+')) {
+        agent_phone = '+' + agent_phone;
+      }
+      
+      // For DingTalk message display name, use effective_agent_name directly
+      let agent_display_name = effective_agent_name;
+
+      // ============================================
+      // 2. 写入数据库
+      // ============================================
+      let leadId = null;
+      let dbError = null;
+      try {
+        const insertStmt = await env.lead_db.prepare(`
+          INSERT INTO leads (
+            client_id, agent_name, agent_phone, click_type,
+            rent, property_price, size, district, property_type,
+            page_location, page_referrer, landing_page,
+            utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+            gclid, traffic_type, traffic_source, traffic_detail,
+            search_query, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const result = await insertStmt.bind(
+          client_id, effective_agent_name, agent_phone, click_type,
+          rent, property_price, size, district, property_type,
+          page_location, referrer, landing_page,
+          utm_source, utm_medium, utm_campaign, utm_term, utm_content,
+          gclid, traffic_type, traffic_source, traffic_detail,
+          search_query, 'pending', isoTime
+        ).run();
+
+        leadId = result.meta.last_row_id;
+        console.log(`✅ Lead saved, ID: ${leadId} | Agent: ${effective_agent_name}`);
+      } catch (error) {
+        dbError = error;
+        console.error('❌ Database insert error:', error);
+      }
+
+      // ============================================
+      // 3. 获取钉钉凭证和发送消息
+      // ============================================
+      const DINGTALK_APP_KEY = env.DINGTALK_APP_KEY;
+      const DINGTALK_APP_SECRET = env.DINGTALK_APP_SECRET;
+      const DINGTALK_AGENT_ID = env.DINGTALK_AGENT_ID;
+
+      if (!DINGTALK_APP_KEY || !DINGTALK_APP_SECRET || !DINGTALK_AGENT_ID) {
+        return new Response(JSON.stringify({ error: 'Missing DingTalk credentials' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+
+      // 获取钉钉 Access Token
+      const tokenUrl = `https://oapi.dingtalk.com/gettoken?appkey=${DINGTALK_APP_KEY}&appsecret=${DINGTALK_APP_SECRET}`;
+      const tokenRes = await fetch(tokenUrl);
+      const tokenData = await tokenRes.json();
+      
+      if (tokenData.errcode !== 0) {
+        return new Response(JSON.stringify({ error: `Token error: ${tokenData.errmsg}` }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+        });
+      }
+      
+      const accessToken = tokenData.access_token;
+
+      // 获取接收人的钉钉 User ID (需要手机号)
+      const userRes = await fetch(`https://oapi.dingtalk.com/topapi/v2/user/getbymobile?access_token=${accessToken}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile: agent_phone })
+      });
+      const userData = await userRes.json();
+      
+      let userId = null;
+      if (userData.errcode === 0 && userData.result && userData.result.userid) {
+        userId = userData.result.userid;
+        console.log(`✅ DingTalk user ID found for ${agent_phone}`);
+      } else {
+        console.log(`⚠️ Could not retrieve DingTalk user ID for ${agent_phone}`);
+      }
+
+      // 构建房源信息摘要
+      const propertyLines = [];
+      if (rent) propertyLines.push(`💰 **租:** ${rent}`);
+      if (property_price) propertyLines.push(`🏷️ **售:** ${property_price}`);
+      if (size) propertyLines.push(`📐 **面积:** ${size}`);
+      if (district) propertyLines.push(`📍 **区域:** ${district}`);
+      if (property_type) propertyLines.push(`🏢 **类型:** ${property_type}`);
+      
+      const propertyInfo = propertyLines.length > 0 
+        ? propertyLines.join('\n') 
+        : '📋 暂无房源详细信息';
+
+      // 构建营销来源信息
+      const marketingLines = [];
+      if (traffic_type) marketingLines.push(`**流量类型:** ${traffic_type}`);
+      if (traffic_source) marketingLines.push(`**来源:** ${traffic_source}`);
+      if (traffic_detail) marketingLines.push(`**详情:** ${traffic_detail}`);
+      if (utm_source) marketingLines.push(`**UTM来源:** ${utm_source}`);
+      if (utm_medium) marketingLines.push(`**UTM媒介:** ${utm_medium}`);
+      if (utm_campaign) marketingLines.push(`**UTM活动:** ${utm_campaign}`);
+      if (utm_term) marketingLines.push(`**UTM关键词:** ${utm_term}`);
+      if (gclid) marketingLines.push(`**GCLID:** \`${gclid.substring(0, 30)}...\``);
+      
+      const marketingInfo = marketingLines.length > 0 
+        ? marketingLines.join('\n') 
+        : '未检测到来源信息';
+
+      // ============================================
+      // 构建历史记录部分
+      // ============================================
+      let historySection = '';
+      if (historyRecords.length > 0) {
+        const historyLines = [];
+        historyLines.push(`\n\n---\n\n### 📜 历史记录 (同一客户)\n\n`);
+        historyLines.push(`| ID | 日期 | 代理 | 来源 | 状态 | 处理人 | 处理时间 |`);
+        historyLines.push(`|----|------|------|------|------|--------|----------|`);
+        
+        for (const record of historyRecords) {
+          if (record.id === leadId) continue;
+          
+          let recordDate = record.created_at || '未知';
+          if (recordDate && recordDate !== '未知') {
+            try {
+              recordDate = new Date(recordDate).toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' });
+            } catch (e) {}
+          }
+          
+          const recordId = record.id;
+          const recordAgent = record.agent_name || '未知';
+          const recordClickType = record.click_type || '未知';
+          const recordStatus = record.status === 'pending' ? '⏳ 待处理' : (record.status === 'verified' ? '✅ 确认有效' : '❌ 确认垃圾');
+          
+          const recordVerifiedBy = record.verified_by || '-';
+          
+          let recordVerifiedDate = record.verified_at || '未处理';
+          if (recordVerifiedDate && recordVerifiedDate !== '未处理') {
+            try {
+              recordVerifiedDate = new Date(recordVerifiedDate).toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' });
+            } catch (e) {}
+          }
+          
+          historyLines.push(`| ${recordId} | ${recordDate} | ${recordAgent} | ${recordClickType} | ${recordStatus} | ${recordVerifiedBy} | ${recordVerifiedDate} |`);
+        }
+        
+        if (historyLines.length > 2) {
+          historySection = historyLines.join('\n');
+          const historyCount = historyRecords.length - (leadId ? 1 : 0);
+          if (historyCount > 0) {
+            historySection += `\n\n⚠️ **注意：该客户已有 ${historyCount} 次历史咨询记录，请确认是否需要重复跟进！**`;
+          }
+        }
+      }
+
+      // 重复点击警告
+      const repeatWarning = data.previous_conversion ? '\n\n⚠️ **该用户之前已点击过咨询按钮！**' : '';
+
+      // ============================================
+      // 构建验证链接
+      // ============================================
+      const host = request.headers.get('host');
+      const verifyUrl = `https://${host}/verify?id=${leadId}`;
+
+      // ============================================
+      // 构建完整的钉钉消息
+      // ============================================
+      let messageText = `## 📞 新线索通知\n\n` +
+        `**线索ID:** \`#${leadId || 'N/A'}\`\n\n` +
+        `${formattedTime}\n\n` +
+        `---\n\n` +
+        `**客号:** \`${client_id}\`\n\n` +
+        `---\n\n` +
+        `${propertyInfo}\n\n` +
+        `---\n\n` +
+        `### 👤 ${agent_display_name}\n\n` +
+        `---\n\n` +
+        `### 🎯 线索来源\n\n` +
+        `**接收模式:** ${click_type || '未知'}\n\n`;
+      
+      if (search_query) {
+        messageText += `**🔍 搜索词:** ${search_query}\n\n`;
+      }
+      
+      messageText += `${marketingInfo}\n\n` +
+        `---\n\n` +
+        `### 🌐 落地页\n\n` +
+        `${landing_page || '未知'}\n\n` +
+        `---\n\n` +
+        `### 📍 点击页面\n\n` +
+        `${page_location || '未知'}\n\n` +
+        `---\n\n` +
+        `### 🔗 [验证线索](${verifyUrl})\n\n` +
+        `⚠️<font color="red">优先跟进权归首位确认线索者所有</font>\n\n` +
+        `---\n\n` +
+        `${repeatWarning}${historySection}`;
+      
+      // 发送钉钉消息给代理
+      if (userId) {
+        const sendRes = await fetch(`https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=${accessToken}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agent_id: parseInt(DINGTALK_AGENT_ID),
+            userid_list: userId,
+            msg: {
+              msgtype: 'markdown',
+              markdown: {
+                title: '📞 新线索通知',
+                text: messageText
+              }
+            }
+          })
+        });
+        const sendData = await sendRes.json();
+        
+        if (sendData.errcode !== 0) {
+          console.error(`Send error: ${sendData.errmsg}`);
+        }
+      } else {
+        console.warn(`No user ID for ${agent_phone}, message not sent.`);
+      }
+
+      // ============================================
+      // 4. 发送副本给管理员
+      // ============================================
+
+      let adminPhones = [];
+      try {
+        const adminsJson = await env.AGENT_PHONE_MAP.get('admins');
+        if (adminsJson) {
+          adminPhones = JSON.parse(adminsJson);
+        }
+      } catch (e) {}
+
+      const adminMessageText = `## 📋 线索副本 (管理员)\n\n` +
+        `**线索ID:** \`#${leadId || 'N/A'}\`\n\n` +
+        `${formattedTime}\n\n` +
+        `---\n\n` +
+        `**客号:** \`${client_id}\`\n\n` +
+        `**代理:** ${agent_display_name}\n\n` +
+        `**代理电话:** ${agent_phone}\n\n` +
+        `---\n\n` +
+        `${propertyInfo}\n\n` +
+        `---\n\n` +
+        `### 🎯 线索来源\n\n` +
+        `**接收模式:** ${click_type || '未知'}\n\n` +
+        (search_query ? `**🔍 搜索词:** ${search_query}\n\n` : '') +
+        `${marketingInfo}\n\n` +
+        `---\n\n` +
+        `### 🌐 落地页\n\n` +
+        `${landing_page || '未知'}\n\n` +
+        `---\n\n` +
+        `### 📍 点击页面\n\n` +
+        `${page_location || '未知'}\n\n` +
+        `---\n\n` +
+        `### 🔗 [验证线索](${verifyUrl})\n\n` +
+        `⚠️<font color="red">优先跟进权归首位确认线索者所有</font>\n\n` +
+        `---\n\n` +
+        `⚠️ 此消息为系统自动发送的副本。${historySection}`;
+
+      let adminSentCount = 0;
+      for (const adminPhone of adminPhones) {
+        try {
+          let formattedAdminPhone = adminPhone;
+          if (!formattedAdminPhone.startsWith('+')) {
+            formattedAdminPhone = '+' + formattedAdminPhone;
+          }
+          
+          const adminUserRes = await fetch(`https://oapi.dingtalk.com/topapi/v2/user/getbymobile?access_token=${accessToken}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mobile: formattedAdminPhone })
+          });
+          const adminUserData = await adminUserRes.json();
+          
+          if (adminUserData.errcode === 0 && adminUserData.result && adminUserData.result.userid) {
+            const adminUserId = adminUserData.result.userid;
+            await fetch(`https://oapi.dingtalk.com/topapi/message/corpconversation/asyncsend_v2?access_token=${accessToken}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                agent_id: parseInt(DINGTALK_AGENT_ID),
+                userid_list: adminUserId,
+                msg: {
+                  msgtype: 'markdown',
+                  markdown: {
+                    title: '📋 线索副本',
+                    text: adminMessageText
+                  }
+                }
+              })
+            });
+            adminSentCount++;
+          }
+        } catch (e) {}
+      }
+
+      // 返回成功
+      return new Response(JSON.stringify({ 
+        success: true, 
+        lead_id: leadId,
+        client_id: client_id,
+        agent_mapped: agent_found,
+        agent_used: agent_phone,
+        agent_display_name: agent_display_name,
+        admin_copies_sent: adminSentCount,
+        history_count: historyRecords.length,
+        db_error: dbError ? dbError.message : null
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
+
+    } catch (error) {
+      console.error('Worker error:', error);
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+      });
     }
-if (path === '/api/conversion-trend' && request.method === 'GET') {
-  return handleConversionTrend(env, request);
-}
-
-if (path === '/api/combined-conversion-stats' && request.method === 'GET') {
-  return handleCombinedConversionStats(env, request);
-}
-
-if (path === '/api/export-reinstatement-to-sheets' && request.method === 'POST') {
-  return handleExportReinstatementToSheets(request, env);
-}
-    if (path === '/api/debug-all-vars' && request.method === 'GET') {
-  return handleDebugAllVars(request, env);
-}
-    return new Response('Not found', { status: 404 });
-  }
+  },
 };
 
-async function handleExportReinstatementToSheets(request, env) {
-  try {
-    const { leads } = await request.json();
-    
-    if (!leads || !Array.isArray(leads) || leads.length === 0) {
-      return new Response(JSON.stringify({ success: false, error: "没有选择客户" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
+// ============================================
+// 计算转化价值
+// ============================================
+
+function calculateValue(type, range, baseRent, basePrice) {
+  const extractNumber = (str) => {
+    if (!str) return 0;
+    const match = str.match(/(\d+(?:,\d+)?)/);
+    return match ? parseInt(match[1].replace(/,/g, ''), 10) : 0;
+  };
+  
+  const rentNum = extractNumber(baseRent);
+  const priceNum = extractNumber(basePrice);
+  
+  if (type === 'rent') {
+    switch (range) {
+      case 'below_20k': return 2000;
+      case '20k_50k': return Math.round(35000 * 0.3);
+      case '50k_80k': return Math.round(65000 * 0.3);
+      case '80k_120k': return Math.round(100000 * 0.3);
+      case '120k_160k': return Math.round(140000 * 0.3);
+      case 'above_160k': return Math.round(200000 * 0.3);
+      default: return rentNum > 0 ? Math.round(rentNum * 0.3) : 2000;
     }
-    
-    // Get credentials from environment variables
-    const serviceAccountJson = await env.AGENT_PHONE_MAP.get("GOOGLE_SERVICE_ACCOUNT_KEY");
-    const spreadsheetId = await env.AGENT_PHONE_MAP.get("GOOGLE_SPREADSHEET_ID");
-    
-    if (!serviceAccountJson || !spreadsheetId) {
-      return new Response(JSON.stringify({ success: false, error: "Google Sheets 未配置" }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
+  } else {
+    switch (range) {
+      case 'below_8m': return 2000;
+      case '8m_15m': return Math.round(11500000 * 0.003);
+      case '15m_20m': return Math.round(17500000 * 0.003);
+      case '20m_50m': return Math.round(35000000 * 0.003);
+      case 'above_50m': return Math.round(50000000 * 0.003);
+      default: return priceNum > 0 ? Math.round(priceNum * 0.003) : 2000;
     }
-    
-    // Get access token using service account
-    const accessToken = await getGoogleAccessToken(serviceAccountJson);
-    
-    // Prepare records for Google Sheets
-    const now = new Date();
-    // Format: 2026-06-04 10:00:00+08:00
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}+08:00`;
-    
-    const conversionNameMap = {
-      'tel': 'tel',
-      'form': 'form',
-      'msg': 'msg',
-      'whatsapp': 'msg',
-      'wechat': 'msg',
-      'messenger': 'msg'
-    };
-    
-    // Build rows for Google Sheets
-    const rows = [];
-    for (const lead of leads) {
-      const conversionName = conversionNameMap[lead.click_type] || 'leasinghub (web) enqProp_form';
-      let adjustmentType = 'RESTATE';
-      let adjustedValue = lead.value;
-      
-      if (lead.value === 0 || lead.value === '0') {
-        adjustmentType = 'RETRACT';
-        adjustedValue = 0;
-      }
-      
-      rows.push([
-        lead.client_id,                    // Order ID
-        conversionName,                    // Conversion Name
-        formattedTime,                     // Adjustment Time
-        adjustmentType,                    // Adjustment Type
-        adjustedValue,                     // Adjusted Value
-        'HKD',                             // Adjustment Currency
-        lead.gclid || ''                   // GCLID
-      ]);
-    }
-    
-    // Append to Google Sheets
-    const response = await fetch(
-      `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A:G:append?valueInputOption=USER_ENTERED`,
-      {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          values: rows
-        })
-      }
-    );
-    
-    const result = await response.json();
-    
-    if (response.ok) {
-      // Update database to mark as exported (optional)
-      const successfulIds = leads.map(l => l.client_id);
-      const placeholders = successfulIds.map(() => "?").join(",");
-      const nowIso = new Date().toISOString();
-      
-      await env.lead_db.prepare(`
-         UPDATE leads 
-         SET reinstatement_submitted_at = ?
-         WHERE client_id IN (${placeholders})
-       `).bind(nowIso, ...successfulIds).run();
-      
-      return new Response(JSON.stringify({
-        success: true,
-        message: `成功导出 ${rows.length} 条记录到 Google Sheets`,
-        rows_added: rows.length
-      }), {
-        headers: { "Content-Type": "application/json" }
-      });
-    } else {
-      console.error("Google Sheets API error:", result);
-      return new Response(JSON.stringify({
-        success: false,
-        error: result.error?.message || "导出失败"
-      }), {
-        status: 500,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    
-  } catch (error) {
-    console.error("Export to sheets error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
   }
 }
 
-async function getGoogleAccessToken(serviceAccountJson) {
+// ============================================
+// 验证页面处理函数
+// ============================================
+
+async function handleVerifyPage(env, url, request) {
+  const leadId = url.searchParams.get('id');
+  
+  if (!leadId) {
+    return new Response('缺少线索ID参数', { status: 400 });
+  }
+  
+  // 查询线索信息
+  const lead = await env.lead_db.prepare(`
+    SELECT id, client_id, agent_name, click_type, 
+           rent, property_price, size, district, property_type,
+           landing_page, page_location, status, created_at, verified_at, verified_by
+    FROM leads 
+    WHERE id = ?
+  `).bind(leadId).first();
+  
+  if (!lead) {
+    return new Response('线索不存在', { status: 404 });
+  }
+  
+  // 获取 URL 参数
+  const mode = url.searchParams.get('mode');
+  const isRecoveryMode = (mode === 'recovery');
+  
+  // 检查同一 client_id 是否有已被处理的记录
+  const verifiedRecord = await env.lead_db.prepare(`
+    SELECT id, agent_name, verified_by, verified_at, status
+    FROM leads 
+    WHERE client_id = ? AND status = 'verified'
+    ORDER BY verified_at DESC
+    LIMIT 1
+  `).bind(lead.client_id).first();
+  
+  const rejectedRecord = await env.lead_db.prepare(`
+    SELECT id, agent_name, verified_by, verified_at, status
+    FROM leads 
+    WHERE client_id = ? AND status = 'rejected'
+    ORDER BY verified_at DESC
+    LIMIT 1
+  `).bind(lead.client_id).first();
+  
+  // 如果已经有 verified 记录，永久锁定
+  if (verifiedRecord) {
+    const html = `<!DOCTYPE html>
+<html lang="zh-HK">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>线索验证 - 已锁定</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px;display:flex;justify-content:center;align-items:center}.container{max-width:500px;margin:0 auto;background:white;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden}.header{background:linear-gradient(135deg,#da196e,#b9155e);color:white;padding:30px;text-align:center}.header h1{font-size:24px;margin-bottom:8px}.content{padding:30px}.warning-icon{font-size:60px;text-align:center;margin-bottom:20px}.warning-message{background:#fff3cd;border-left:4px solid #ffc107;padding:16px;border-radius:8px;margin-bottom:20px}.info-row{padding:8px 0;border-bottom:1px solid #e9ecef}.info-label{font-weight:600;color:#495057;display:inline-block;width:100px}.info-value{color:#212529}.button-group{display:flex;gap:16px;margin-top:24px}.btn{flex:1;padding:12px 20px;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:transform 0.2s,opacity 0.2s}.btn:hover{transform:translateY(-2px);opacity:0.9}.btn-back{background:#6c757d;color:white}.footer{background:#f8f9fa;padding:16px 30px;text-align:center;font-size:12px;color:#6c757d}</style>
+</head>
+<body>
+<div class="container"><div class="header"><h1>🔍 线索验证</h1></div>
+<div class="content"><div class="warning-icon">⚠️</div>
+<div class="warning-message"><strong>此客户已被其他代理确认为有效线索！</strong><br><br>
+<div class="info-row"><span class="info-label">处理代理：</span><span class="info-value">${escapeHtml(verifiedRecord.agent_name) || '未知'}</span></div>
+<div class="info-row"><span class="info-label">处理时间：</span><span class="info-value">${new Date(verifiedRecord.verified_at).toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' })}</span></div></div>
+</div>
+<div class="footer">此线索来自 LeasingHub 系统<br><font color="red">该客户已被确认有效，无法再次修改</font></div></div>
+</body></html>`;
+    return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  }
+  
+  // 如果是恢复模式，直接显示正常验证页面
+  if (isRecoveryMode && rejectedRecord) {
+    // 继续往下执行，显示正常验证页面
+  } else if (rejectedRecord && !isRecoveryMode) {
+    const html = `<!DOCTYPE html>
+<html lang="zh-HK">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>线索验证 - 可恢复</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px;display:flex;justify-content:center;align-items:center}.container{max-width:500px;margin:0 auto;background:white;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden}.header{background:linear-gradient(135deg,#da196e,#b9155e);color:white;padding:30px;text-align:center}.header h1{font-size:24px;margin-bottom:8px}.content{padding:30px}.warning-icon{font-size:60px;text-align:center;margin-bottom:20px}.warning-message{background:#fff3cd;border-left:4px solid #ffc107;padding:16px;border-radius:8px;margin-bottom:20px}.info-row{padding:8px 0;border-bottom:1px solid #e9ecef}.info-label{font-weight:600;color:#495057;display:inline-block;width:100px}.info-value{color:#212529}.button-group{display:flex;gap:16px;margin-top:24px;justify-content:center}.btn{flex:1;padding:12px 20px;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:transform 0.2s,opacity 0.2s;text-decoration:none;text-align:center;display:inline-block;max-width:200px}.btn-verify{background:#28a745;color:white}.footer{background:#f8f9fa;padding:16px 30px;text-align:center;font-size:12px;color:#6c757d}</style>
+</head>
+<body>
+<div class="container"><div class="header"><h1>🔍 线索验证</h1></div>
+<div class="content"><div class="warning-icon">⚠️</div>
+<div class="warning-message"><strong>此线索曾被标记为垃圾线索！</strong><br><br>
+<div class="info-row"><span class="info-label">原处理代理：</span><span class="info-value">${escapeHtml(rejectedRecord.agent_name) || '未知'}</span></div>
+<div class="info-row"><span class="info-label">原处理时间：</span><span class="info-value">${new Date(rejectedRecord.verified_at).toLocaleString('zh-HK', { timeZone: 'Asia/Hong_Kong' })}</span></div></div>
+<p style="margin-bottom:20px;color:#666;">该线索曾被标记为垃圾/无关询问，如需重新确认，请点击下方按钮继续。</p>
+<div class="button-group"><a href="/verify?id=${leadId}&mode=recovery" class="btn btn-verify" style="text-decoration:none;text-align:center;display:inline-block;">✅ 继续验证此线索</a></div></div>
+<div class="footer">此线索来自 LeasingHub 系统</div></div>
+</body></html>`;
+    return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  }
+  
+  // 正常显示验证页面
+  const districtsJson = await env.AGENT_PHONE_MAP.get('districts');
+  let districts = ['Central', 'Sheung_Wan', 'Causeway_Bay', 'Tsimshatsui', 'Mongkok', 'Kwun_Tong', 'Kowloon_Bay'];
+  if (districtsJson) {
+    try { districts = JSON.parse(districtsJson); } catch (e) {}
+  }
+  
+  const html = `<!DOCTYPE html>
+<html lang="zh-HK">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>线索验证 - LeasingHub</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px}.container{max-width:600px;margin:0 auto;background:white;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden}.header{background:linear-gradient(135deg,#da196e,#b9155e);color:white;padding:30px;text-align:center}.header h1{font-size:24px;margin-bottom:8px}.header p{opacity:0.9;font-size:14px}.content{padding:30px}.info-section{background:#f8f9fa;border-radius:12px;padding:20px;margin-bottom:24px}.info-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #e9ecef}.info-row:last-child{border-bottom:none}.info-label{font-weight:600;color:#495057;width:120px}.info-value{color:#212529;flex:1;word-break:break-word}.status-badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}.status-pending{background:#ffc107;color:#856404}.form-group{margin-bottom:20px}.form-group label{display:block;font-weight:600;color:#495057;margin-bottom:8px}.form-group select{width:100%;padding:12px;border:1px solid #ced4da;border-radius:8px;font-size:16px;background:white}.button-group{display:flex;gap:16px;margin-top:24px}.btn{flex:1;padding:14px 20px;border:none;border-radius:8px;font-size:16px;font-weight:600;cursor:pointer;transition:transform 0.2s,opacity 0.2s}.btn:hover{transform:translateY(-2px);opacity:0.9}.btn-verify{background:#28a745;color:white}.btn-reject{background:#dc3545;color:white}.btn-cancel{background:#6c757d;color:white}.footer{background:#f8f9fa;padding:16px 30px;text-align:center;font-size:12px;color:#6c757d}.message{padding:12px 16px;border-radius:8px;margin-bottom:20px;display:none}.message.success{background:#d4edda;color:#155724;border:1px solid #c3e6cb}.message.error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}.value-display{background:#e9ecef;padding:12px;border-radius:8px;margin-top:16px;text-align:center;font-size:18px;font-weight:bold;color:#da196e}@media (max-width:480px){.info-row{flex-direction:column}.info-label{width:100%;margin-bottom:4px}.button-group{flex-direction:column}}</style>
+</head>
+<body><div class="container"><div class="header"><h1>🔍 线索验证</h1><p id="headerSubtitle">${isRecoveryMode ? '⚠️ 此线索曾被标记为垃圾，请重新确认客户需求' : '请确认客户咨询信息并设置价值'}</p></div>
+<div class="content"><div id="message" class="message"></div>
+<div class="info-section"><div class="info-row"><span class="info-label">线索ID：</span><span class="info-value">#${lead.id}</span></div>
+<div class="info-row"><span class="info-label">客号：</span><span class="info-value">${escapeHtml(lead.client_id)}</span></div>
+<div class="info-row"><span class="info-label">状态：</span><span class="info-value"><span class="status-badge status-pending">${isRecoveryMode ? '待重新确认' : '⏳ 待处理'}</span></span></div></div>
+<form id="verifyForm"><input type="hidden" id="agentName" value="${escapeHtml(lead.agent_name) || 'unknown'}">
+<div class="form-group"><label>📍 区域</label><select id="district">${districts.map(d => `<option value="${escapeHtml(d)}" ${lead.district === d ? 'selected' : ''}>${escapeHtml(d)}</option>`).join('')}</select></div>
+<div class="form-group"><label>📋 租 / 买</label><select id="type" onchange="updateBudgetOptions()"><option value="rent" ${lead.rent ? 'selected' : ''}>租用 (Rent)</option><option value="buy" ${lead.property_price ? 'selected' : ''}>购买 (Buy)</option></select></div>
+<div class="form-group"><label>💰 预算范围</label><select id="budgetRange"></select></div>
+<div id="valueDisplay" class="value-display">预计价值: 计算中...</div>
+<div class="button-group"><button type="button" class="btn btn-verify" onclick="submitVerify()">✅ 确认有效</button>${!isRecoveryMode ? '<button type="button" class="btn btn-reject" onclick="submitReject()">❌ 确认垃圾</button>' : ''}</div></form></div>
+<div class="footer">此线索来自 LeasingHub 系统</div></div>
+<script>
+  const leadId = ${lead.id};
+  const originalRent = ${lead.rent ? parseFloat(lead.rent.replace(/,/g, '')) : 0};
+  const originalPrice = ${lead.property_price ? parseFloat(lead.property_price.replace(/,/g, '')) : 0};
+  const isRecoveryMode = ${isRecoveryMode};
+  
+  function getAgentName() {
+    return document.getElementById('agentName').value;
+  }
+  
+  const rentOptions = [
+    { value: 'below_20k', label: 'Below 2萬', baseValue: 20000 },
+    { value: '20k_50k', label: '2萬 - 5萬', baseValue: 35000 },
+    { value: '50k_80k', label: '5萬 - 8萬', baseValue: 65000 },
+    { value: '80k_120k', label: '8萬 - 12萬', baseValue: 100000 },
+    { value: '120k_160k', label: '12萬 - 16萬', baseValue: 140000 },
+    { value: 'above_160k', label: 'Above 16萬', baseValue: 200000 }
+  ];
+  
+  const buyOptions = [
+    { value: 'below_8m', label: 'Below 800萬', baseValue: 8000000 },
+    { value: '8m_15m', label: '800萬 - 1500萬', baseValue: 11500000 },
+    { value: '15m_20m', label: '1500萬 - 2000萬', baseValue: 17500000 },
+    { value: '20m_50m', label: '2000萬 - 5000萬', baseValue: 35000000 },
+    { value: 'above_50m', label: 'Above 5000萬', baseValue: 50000000 }
+  ];
+  
+  function updateBudgetOptions() {
+    const type = document.getElementById('type').value;
+    const select = document.getElementById('budgetRange');
+    const options = type === 'rent' ? rentOptions : buyOptions;
+    
+    select.innerHTML = '';
+    for (var i = 0; i < options.length; i++) {
+      var opt = options[i];
+      var option = document.createElement('option');
+      option.value = opt.value;
+      option.textContent = opt.label;
+      select.appendChild(option);
+    }
+    
+    // 切换后重新设置默认值
+    setDefaultBudgetRange();
+  }
+  
+  function calculateValue() {
+    const type = document.getElementById('type').value;
+    const range = document.getElementById('budgetRange').value;
+    let value = 0;
+    if (type === 'rent') {
+      switch(range) {
+        case 'below_20k': value = 2000; break;
+        case '20k_50k': value = Math.round(35000 * 0.3); break;
+        case '50k_80k': value = Math.round(65000 * 0.3); break;
+        case '80k_120k': value = Math.round(100000 * 0.3); break;
+        case '120k_160k': value = Math.round(140000 * 0.3); break;
+        case 'above_160k': value = Math.round(200000 * 0.3); break;
+        default: value = Math.round((originalRent || 35000) * 0.3);
+      }
+    } else {
+      switch(range) {
+        case 'below_8m': value = 2000; break;
+        case '8m_15m': value = Math.round(11500000 * 0.003); break;
+        case '15m_20m': value = Math.round(17500000 * 0.003); break;
+        case '20m_50m': value = Math.round(35000000 * 0.003); break;
+        case 'above_50m': value = Math.round(50000000 * 0.003); break;
+        default: value = Math.round((originalPrice || 11500000) * 0.003);
+      }
+    }
+    document.getElementById('valueDisplay').innerHTML = '💰 预计价值: HK$ ' + value.toLocaleString();
+    return value;
+  }
+  
+  function setDefaultBudgetRange() {
+    const type = document.getElementById('type').value;
+    const select = document.getElementById('budgetRange');
+    
+    if (type === 'rent' && originalRent > 0) {
+      const monthlyRent = originalRent;
+      var defaultRange = null;
+      
+      if (monthlyRent < 20000) {
+        defaultRange = 'below_20k';
+      } else if (monthlyRent >= 20000 && monthlyRent < 50000) {
+        defaultRange = '20k_50k';
+      } else if (monthlyRent >= 50000 && monthlyRent < 80000) {
+        defaultRange = '50k_80k';
+      } else if (monthlyRent >= 80000 && monthlyRent < 120000) {
+        defaultRange = '80k_120k';
+      } else if (monthlyRent >= 120000 && monthlyRent < 160000) {
+        defaultRange = '120k_160k';
+      } else if (monthlyRent >= 160000) {
+        defaultRange = 'above_160k';
+      }
+      
+      if (defaultRange) {
+        for (var i = 0; i < select.options.length; i++) {
+          if (select.options[i].value === defaultRange) {
+            select.selectedIndex = i;
+            break;
+          }
+        }
+      }
+    } else if (type === 'buy' && originalPrice > 0) {
+      const salePrice = originalPrice;
+      var defaultRange = null;
+      
+      if (salePrice < 8000000) {
+        defaultRange = 'below_8m';
+      } else if (salePrice >= 8000000 && salePrice < 15000000) {
+        defaultRange = '8m_15m';
+      } else if (salePrice >= 15000000 && salePrice < 20000000) {
+        defaultRange = '15m_20m';
+      } else if (salePrice >= 20000000 && salePrice < 50000000) {
+        defaultRange = '20m_50m';
+      } else if (salePrice >= 50000000) {
+        defaultRange = 'above_50m';
+      }
+      
+      if (defaultRange) {
+        for (var i = 0; i < select.options.length; i++) {
+          if (select.options[i].value === defaultRange) {
+            select.selectedIndex = i;
+            break;
+          }
+        }
+      }
+    }
+    
+    calculateValue();
+  }
+  
+  document.addEventListener('DOMContentLoaded', function() { 
+    updateBudgetOptions();
+    setDefaultBudgetRange();
+    document.getElementById('budgetRange').addEventListener('change', calculateValue);
+  });
+
+async function submitVerify() {
+  const statusType = isRecoveryMode ? 'reinstated' : 'verified';
+  const district = document.getElementById('district').value;
+  const type = document.getElementById('type').value;
+  const budgetRange = document.getElementById('budgetRange').value;
+  const value = calculateValue();
+  const agentName = getAgentName();
+  const messageDiv = document.getElementById('message');
+  const submitBtn = event.target;
+  const form = document.getElementById('verifyForm');
+  const header = document.getElementById('pageHeader');
+  const headerSubtitle = document.getElementById('headerSubtitle');
+  const infoSection = document.querySelector('.info-section');
+  
+  submitBtn.disabled = true;
+  submitBtn.textContent = '处理中...';
+  
+  // 先改变样式（无论成功失败，都表示已处理）
+  if (header) {
+    header.style.background = 'linear-gradient(135deg, #28a745 0%, #1e7e34 100%)';
+  }
+  if (headerSubtitle) headerSubtitle.style.display = 'none';
+  if (infoSection) infoSection.style.display = 'none';
+
   try {
-    const credentials = JSON.parse(serviceAccountJson);
-    
-    // Create JWT header and payload
-    const header = {
-      alg: 'RS256',
-      typ: 'JWT'
-    };
-    
-    const now = Math.floor(Date.now() / 1000);
-    const payload = {
-      iss: credentials.client_email,
-      scope: 'https://www.googleapis.com/auth/spreadsheets',
-      aud: 'https://oauth2.googleapis.com/token',
-      exp: now + 3600,
-      iat: now
-    };
-    
-    // Base64url encode
-    const encodedHeader = btoa(JSON.stringify(header))
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
-    
-    const encodedPayload = btoa(JSON.stringify(payload))
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
-    
-    const message = `${encodedHeader}.${encodedPayload}`;
-    
-    // For Cloudflare Workers environment
-    // You'll need to implement RSA signing
-    // This is a simplified version - you may need to use Web Crypto API
-    const encoder = new TextEncoder();
-    const messageBuffer = encoder.encode(message);
-    
-    // Parse PEM private key
-    const privateKey = credentials.private_key;
-    
-    // Remove PEM headers and decode base64
-    const pemHeader = "-----BEGIN PRIVATE KEY-----\n";
-    const pemFooter = "\n-----END PRIVATE KEY-----";
-    let pemContent = privateKey;
-    if (privateKey.includes(pemHeader)) {
-      pemContent = privateKey.replace(pemHeader, '').replace(pemFooter, '');
-    }
-    pemContent = pemContent.replace(/\n/g, '');
-    
-    const binaryDer = atob(pemContent);
-    const keyBuffer = new Uint8Array(binaryDer.length);
-    for (let i = 0; i < binaryDer.length; i++) {
-      keyBuffer[i] = binaryDer.charCodeAt(i);
-    }
-    
-    const cryptoKey = await crypto.subtle.importKey(
-      'pkcs8',
-      keyBuffer,
-      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    
-    const signature = await crypto.subtle.sign(
-      { name: 'RSASSA-PKCS1-v1_5' },
-      cryptoKey,
-      messageBuffer
-    );
-    
-    const encodedSignature = btoa(String.fromCharCode(...new Uint8Array(signature)))
-      .replace(/=/g, '')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_');
-    
-    const jwt = `${message}.${encodedSignature}`;
-    
-    // Exchange JWT for access token
-    const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+    const response = await fetch('/verify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-        assertion: jwt
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: leadId,
+        status: statusType,
+        district: district,
+        transaction_type: type,
+        budget_range: budgetRange,
+        value: value,
+        verified_by: agentName
       })
     });
     
-    const tokenData = await tokenResponse.json();
+    const result = await response.json();
     
-    if (!tokenResponse.ok) {
-      throw new Error(tokenData.error_description || tokenData.error);
+    if (result.success) {
+      // 隐藏表单
+      if (form) form.style.display = 'none';
+      // 显示成功消息
+      messageDiv.className = 'message success';
+      messageDiv.style.display = 'block';
+      messageDiv.innerHTML = '<strong>✅ 确认成功！</strong><br>价值已记录。<br>请手动关闭此页面。';
+      
+      // 使用 replace 替换当前历史记录，防止后退到已处理的页面
+      window.history.replaceState(null, '', window.location.pathname + '?id=' + leadId + '&processed=1');
+    } else {
+      throw new Error(result.error || '操作失败');
     }
-    
-    return tokenData.access_token;
-    
   } catch (error) {
-    console.error("Token generation error:", error);
-    throw error;
+    messageDiv.className = 'message error';
+    messageDiv.style.display = 'block';
+    messageDiv.innerText = '操作失败：' + error.message;
+    submitBtn.disabled = false;
+    submitBtn.textContent = '✅ 确认有效';
+    // 如果失败，恢复头部颜色
+    if (header) {
+      header.style.background = 'linear-gradient(135deg, #da196e, #b9155e)';
+    }
+    if (headerSubtitle) headerSubtitle.style.display = 'block';
+    if (infoSection) infoSection.style.display = 'block';
   }
 }
 
-async function handleCombinedConversionStats(env, request) {
+async function submitReject() {
+  if (isRecoveryMode) return;
+  const agentName = getAgentName();
+  const messageDiv = document.getElementById('message');
+  const submitBtn = event.target;
+  const form = document.getElementById('verifyForm');
+  const header = document.getElementById('pageHeader');
+  const headerSubtitle = document.getElementById('headerSubtitle');
+  const infoSection = document.querySelector('.info-section');
+  
+  submitBtn.disabled = true;
+  submitBtn.textContent = '处理中...';
+  
+  // 先改变样式
+  if (header) {
+    header.style.background = 'linear-gradient(135deg, #dc3545 0%, #b91a2a 100%)';
+  }
+  if (headerSubtitle) headerSubtitle.style.display = 'none';
+  if (infoSection) infoSection.style.display = 'none';
+  
   try {
-    const url = new URL(request.url);
-    const dateFrom = url.searchParams.get('date_from') || '';
-    const dateTo = url.searchParams.get('date_to') || '';
+    const response = await fetch('/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: leadId,
+        status: 'rejected',
+        value: 0,
+        budget_range: '0',
+        verified_by: agentName
+      })
+    });
     
-    // Build date filter condition
-    let dateCondition = '';
-    let params = [];
+    const result = await response.json();
     
-    if (dateFrom && dateTo) {
-      dateCondition = ' AND date(created_at) >= date(?) AND date(created_at) <= date(?)';
-      params.push(dateFrom, dateTo);
-    } else if (dateFrom) {
-      dateCondition = ' AND date(created_at) >= date(?)';
-      params.push(dateFrom);
-    } else if (dateTo) {
-      dateCondition = ' AND date(created_at) <= date(?)';
-      params.push(dateTo);
+    if (result.success) {
+      if (form) form.style.display = 'none';
+      messageDiv.className = 'message success';
+      messageDiv.style.display = 'block';
+      messageDiv.innerHTML = '<strong>❌ 已标记为垃圾线索</strong><br>请手动关闭此页面。';
+    } else {
+      throw new Error(result.error || '操作失败');
     }
-    
-    // Paid stats query (with gclid)
-    const paidSql = `
-      WITH paid AS (
-        SELECT value AS ConvValue
-        FROM (
-          SELECT 
-              value,
-              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
-          FROM leads
-          WHERE (gclid IS NOT NULL AND gclid != '') ${dateCondition}
-        )
-        WHERE rn = 1
-      )
-      SELECT 
-        CASE 
-          WHEN ConvValue IS NULL THEN '-'
-          WHEN ConvValue = '0' THEN '0'
-          ELSE '>0'
-        END AS Conversion_Category,
-        COUNT(*) AS Record_Count
-      FROM paid
-      GROUP BY Conversion_Category
-    `;
-    
-    // Non-paid stats query (no gclid)
-    const nonpaidSql = `
-      WITH nonpaid AS (
-        SELECT value AS ConvValue
-        FROM (
-          SELECT 
-              value,
-              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
-          FROM leads
-          WHERE (gclid IS NULL OR gclid = '') ${dateCondition}
-        )
-        WHERE rn = 1
-      )
-      SELECT 
-        CASE 
-          WHEN ConvValue IS NULL THEN '-'
-          WHEN ConvValue = '0' THEN '0'
-          ELSE '>0'
-        END AS Conversion_Category,
-        COUNT(*) AS Record_Count
-      FROM nonpaid
-      GROUP BY Conversion_Category
-    `;
-    
-    // Execute queries
-    const paidStmt = await env.lead_db.prepare(paidSql);
-    const paidResult = await paidStmt.bind(...params).all();
-    
-    const nonpaidStmt = await env.lead_db.prepare(nonpaidSql);
-    const nonpaidResult = await nonpaidStmt.bind(...params).all();
-    
-    // Create maps for easy lookup
-    const paidMap = {};
-    const nonpaidMap = {};
-    let paidTotal = 0;
-    let nonpaidTotal = 0;
-    
-    for (const row of paidResult.results) {
-      paidMap[row.Conversion_Category] = row.Record_Count;
-      paidTotal += row.Record_Count;
+  } catch (error) {
+    messageDiv.className = 'message error';
+    messageDiv.style.display = 'block';
+    messageDiv.innerText = '操作失败：' + error.message;
+    submitBtn.disabled = false;
+    submitBtn.textContent = '❌ 确认垃圾';
+    // 如果失败，恢复头部颜色
+    if (header) {
+      header.style.background = 'linear-gradient(135deg, #da196e, #b9155e)';
     }
+    if (headerSubtitle) headerSubtitle.style.display = 'block';
+    if (infoSection) infoSection.style.display = 'block';
+  }
+}
+
+function cancelAction() {
+  const form = document.getElementById('verifyForm');
+  const messageDiv = document.getElementById('message');
+  const header = document.getElementById('pageHeader');
+  const headerSubtitle = document.getElementById('headerSubtitle');
+  const infoSection = document.querySelector('.info-section');
+  
+  if (form) form.style.display = 'none';
+  if (infoSection) infoSection.style.display = 'none';
+  if (headerSubtitle) headerSubtitle.style.display = 'none';
+  if (header) {
+    header.style.background = 'linear-gradient(135deg, #6c757d 0%, #545b62 100%)';
+  }
+  messageDiv.style.display = 'block';
+  messageDiv.style.background = '#e9ecef';
+  messageDiv.style.color = '#6c757d';
+  messageDiv.style.border = '1px solid #ced4da';
+  messageDiv.innerHTML = '<strong>已取消</strong><br>请手动关闭此页面。';
+}
+
+  window.updateBudgetOptions = updateBudgetOptions;
+  window.calculateValue = calculateValue;
+  window.submitVerify = submitVerify;
+  window.submitReject = submitReject;
+  window.cancelAction = cancelAction;
+</script>
+</body>
+</html>`;
+  
+  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+}
+
+// ============================================
+// 处理验证操作
+// ============================================
+
+async function handleVerifyAction(request, env) {
+  try {
+    const { id, status, district, transaction_type, budget_range, value, verified_by } = await request.json();
     
-    for (const row of nonpaidResult.results) {
-      nonpaidMap[row.Conversion_Category] = row.Record_Count;
-      nonpaidTotal += row.Record_Count;
-    }
-    
-    // Define categories in order
-    const categories = ['-', '0', '>0'];
-    const categoryLabels = {
-      '-': '未验证',
-      '0': '无关查询',
-      '>0': '有效查询'
-    };
-    
-    const stats = [];
-    for (const cat of categories) {
-      stats.push({
-        category: cat,
-        label: categoryLabels[cat],
-        paid_count: paidMap[cat] || 0,
-        paid_percent: paidTotal > 0 ? ((paidMap[cat] || 0) * 100 / paidTotal).toFixed(1) + '%' : '0%',
-        nonpaid_count: nonpaidMap[cat] || 0,
-        nonpaid_percent: nonpaidTotal > 0 ? ((nonpaidMap[cat] || 0) * 100 / nonpaidTotal).toFixed(1) + '%' : '0%'
+    if (!id || (!['verified', 'rejected', 'reinstated'].includes(status))) {
+      return new Response(JSON.stringify({ error: '参数错误' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
       });
     }
     
-    return new Response(JSON.stringify({
-      success: true,
-      stats: stats,
-      paid_total: paidTotal,
-      nonpaid_total: nonpaidTotal
-    }), {
+    const now = new Date().toISOString();
+    const verifiedBy = verified_by || 'system';
+    
+    let result;
+    
+    if (status === 'verified') {
+      result = await env.lead_db.prepare(`
+        UPDATE leads 
+        SET status = ?, verified_at = ?, verified_by = ?,
+            district = ?, transaction_type = ?, budget_range = ?, value = ?
+        WHERE id = ?
+      `).bind(status, now, verifiedBy, district, transaction_type, budget_range, value, id).run();
+      
+    } else if (status === 'rejected') {
+      result = await env.lead_db.prepare(`
+        UPDATE leads 
+        SET status = ?, verified_at = ?, verified_by = ?, value = ?, budget_range = ?
+        WHERE id = ?
+      `).bind(status, now, verifiedBy, 0, '0', id).run();
+      
+    } else {
+      result = await env.lead_db.prepare(`
+        UPDATE leads 
+        SET status = 'verified', verified_at = ?, verified_by = ?,
+            district = ?, transaction_type = ?, budget_range = ?, value = ?
+        WHERE id = ?
+      `).bind(now, verifiedBy, district, transaction_type, budget_range, value, id).run();
+    }
+    
+    if (result.meta.rows_written === 0) {
+      return new Response(JSON.stringify({ error: '线索不存在' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    return new Response(JSON.stringify({ success: true }), {
       headers: { 'Content-Type': 'application/json' }
     });
     
   } catch (error) {
-    console.error('Combined conversion stats error:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
+    console.error('Verify action error:', error);
+    return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });
   }
 }
 
-async function handleDebugAllVars(request, env) {
-  try {
-    // Read all credentials from KV
-    const clientId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CLIENT_ID");
-    const clientSecret = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CLIENT_SECRET");
-    const refreshToken = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_REFRESH_TOKEN");
-    const developerToken = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_DEVELOPER_TOKEN");
-    const loginCustomerId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_LOGIN_CUSTOMER_ID");
-    const customerId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CUSTOMER_ID");
-    const telId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CONVERSION_ACTION_ID_tel");
-    const formId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CONVERSION_ACTION_ID_form");
-    const msgId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CONVERSION_ACTION_ID_msg");
-    
-    // Test access token generation
-    let tokenResult = { success: false, error: null, token_preview: null };
-    try {
-      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: clientSecret,
-          refresh_token: refreshToken,
-          grant_type: 'refresh_token'
-        })
-      });
-      const tokenData = await tokenResponse.json();
-      if (tokenResponse.ok && tokenData.access_token) {
-        tokenResult = {
-          success: true,
-          token_preview: tokenData.access_token.substring(0, 30) + "...",
-          expires_in: tokenData.expires_in
-        };
-      } else {
-        tokenResult = {
-          success: false,
-          error: tokenData.error,
-          error_description: tokenData.error_description
-        };
-      }
-    } catch (e) {
-      tokenResult = { success: false, error: e.message };
-    }
-    
-    // Return all variable statuses
-    return new Response(JSON.stringify({
-      success: true,
-      timestamp: new Date().toISOString(),
-      variables: {
-        GOOGLE_ADS_CLIENT_ID: {
-          exists: !!clientId,
-          preview: clientId ? clientId.substring(0, 40) + "..." : null
-        },
-        GOOGLE_ADS_CLIENT_SECRET: {
-          exists: !!clientSecret,
-          preview: clientSecret ? clientSecret.substring(0, 10) + "..." : null
-        },
-        GOOGLE_ADS_REFRESH_TOKEN: {
-          exists: !!refreshToken,
-          preview: refreshToken ? refreshToken.substring(0, 30) + "..." : null,
-          length: refreshToken ? refreshToken.length : 0
-        },
-        GOOGLE_ADS_DEVELOPER_TOKEN: {
-          exists: !!developerToken,
-          preview: developerToken ? developerToken.substring(0, 15) + "..." : null
-        },
-        GOOGLE_ADS_LOGIN_CUSTOMER_ID: {
-          exists: !!loginCustomerId,
-          value: loginCustomerId || null
-        },
-        GOOGLE_ADS_CUSTOMER_ID: {
-          exists: !!customerId,
-          value: customerId || null
-        },
-        GOOGLE_ADS_CONVERSION_ACTION_ID_tel: {
-          exists: !!telId,
-          value: telId || null
-        },
-        GOOGLE_ADS_CONVERSION_ACTION_ID_form: {
-          exists: !!formId,
-          value: formId || null
-        },
-        GOOGLE_ADS_CONVERSION_ACTION_ID_msg: {
-          exists: !!msgId,
-          value: msgId || null
-        }
-      },
-      token_test: tokenResult
-    }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-
 // ============================================
-// Hotline Handler Functions
+// HTML 转义函数
 // ============================================
 
-async function handleGetHotlineTel(request, env) {
-  try {
-    const value = await env.AGENT_PHONE_MAP.get("general_enquiry");
-    return new Response(JSON.stringify({ success: true, value: value || "" }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-async function handleUpdateHotlineTel(request, env) {
-  try {
-    const { value } = await request.json();
-    if (!value) {
-      return new Response(JSON.stringify({ success: false, error: "缺少數值" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    await env.AGENT_PHONE_MAP.put("general_enquiry", value);
-    return new Response(JSON.stringify({ success: true, message: "已更新" }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-async function handleGetHotlineForm(request, env) {
-  try {
-    const value = await env.AGENT_PHONE_MAP.get("general_enquiry_form");
-    return new Response(JSON.stringify({ success: true, value: value || "" }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-async function handleUpdateHotlineForm(request, env) {
-  try {
-    const { value } = await request.json();
-    if (!value) {
-      return new Response(JSON.stringify({ success: false, error: "缺少數值" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    await env.AGENT_PHONE_MAP.put("general_enquiry_form", value);
-    return new Response(JSON.stringify({ success: true, message: "已更新" }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-async function handleGetHotlineMsg(request, env) {
-  try {
-    const value = await env.AGENT_PHONE_MAP.get("general_enquiry_msg");
-    return new Response(JSON.stringify({ success: true, value: value || "" }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-async function handleUpdateHotlineMsg(request, env) {
-  try {
-    const { value } = await request.json();
-    if (!value) {
-      return new Response(JSON.stringify({ success: false, error: "缺少數值" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" }
-      });
-    }
-    await env.AGENT_PHONE_MAP.put("general_enquiry_msg", value);
-    return new Response(JSON.stringify({ success: true, message: "已更新" }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  });
 }
 
 // ============================================
-// Agent Management Functions
+// 管理后台 - 登录验证
 // ============================================
-
-async function handleGetAgents(request, env) {
-  try {
-    const stmt = await env.lead_db.prepare(`
-      SELECT id, agent_name, phone_number, is_active
-      FROM agents
-      WHERE is_active = 1
-      ORDER BY agent_name
-    `);
-    const result = await stmt.all();
-    
-    return new Response(JSON.stringify({
-      success: true,
-      agents: result.results
-    }), {
-      headers: { "Content-Type": "application/json" }
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-// ============================================
-// Admin Login
-// ============================================
-
 async function handleAdminLogin(request, env) {
   try {
     const { phone, password } = await request.json();
-    const ADMIN_PASSWORD = env.ADMIN_PASSWORD || 'admin123';
     
-    if (password !== ADMIN_PASSWORD) {
+    // 从 KV 读取管理员密码
+    let adminPassword = null;
+    try {
+      adminPassword = await env.AGENT_PHONE_MAP.get('admin_password');
+    } catch (e) {}
+    
+    if (!adminPassword) {
+      return new Response(JSON.stringify({ success: false, error: '系统配置错误：未设置管理员密码' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    if (password !== adminPassword) {
       return new Response(JSON.stringify({ success: false, error: '密码错误' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
     
+    // 从 KV 读取管理员列表
     let adminPhones = [];
     try {
       const adminsJson = await env.AGENT_PHONE_MAP.get('admins');
-      if (adminsJson) adminPhones = JSON.parse(adminsJson);
+      if (adminsJson) {
+        adminPhones = JSON.parse(adminsJson);
+      }
     } catch (e) {}
     
     if (!adminPhones.includes(phone)) {
@@ -699,10 +1095,12 @@ async function handleAdminLogin(request, env) {
       });
     }
     
-    const token = btoa(phone + ':' + Date.now());
+    const token = btoa(`${phone}:${Date.now()}`);
+    
     return new Response(JSON.stringify({ success: true, token: token, phone: phone }), {
       headers: { 'Content-Type': 'application/json' }
     });
+    
   } catch (error) {
     return new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 500,
@@ -712,40 +1110,41 @@ async function handleAdminLogin(request, env) {
 }
 
 // ============================================
-// Get Client Leads
+// 管理后台 - 获取统计数据
 // ============================================
 
-async function handleGetClientLeads(request, env) {
+async function handleAdminGetStats(env) {
   try {
-    const url = new URL(request.url);
-    const clientId = url.searchParams.get('client_id');
+    const statusStmt = await env.lead_db.prepare(`
+      SELECT status, COUNT(*) as count FROM leads GROUP BY status
+    `).all();
     
-    if (!clientId) {
-      return new Response(JSON.stringify({ success: false, error: '缺少 client_id' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' }
-      });
+    const statusCounts = {};
+    for (const row of statusStmt.results) {
+      statusCounts[row.status] = row.count;
     }
     
-    const stmt = await env.lead_db.prepare(`
-      SELECT id, client_id, status, verified_by, verified_at, created_at, value
-      FROM leads 
-      WHERE client_id = ?
-      ORDER BY created_at ASC
-    `);
+    const today = new Date().toISOString().slice(0, 10);
+    const todayStmt = await env.lead_db.prepare(`
+      SELECT COUNT(*) as count FROM leads WHERE date(created_at) = date(?)
+    `).bind(today).first();
     
-    const result = await stmt.bind(clientId).all();
+    const totalStmt = await env.lead_db.prepare(`SELECT COUNT(*) as count FROM leads`).first();
     
     return new Response(JSON.stringify({
       success: true,
-      client_id: clientId,
-      leads: result.results
+      stats: {
+        pending: statusCounts.pending || 0,
+        verified: statusCounts.verified || 0,
+        rejected: statusCounts.rejected || 0,
+        total: totalStmt.count || 0,
+        today: todayStmt.count || 0
+      }
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
     
   } catch (error) {
-    console.error('Get client leads error:', error);
     return new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
@@ -754,7 +1153,7 @@ async function handleGetClientLeads(request, env) {
 }
 
 // ============================================
-// Admin Get Leads
+// 管理后台 - 获取线索列表
 // ============================================
 
 async function handleAdminGetLeads(request, env) {
@@ -800,7 +1199,7 @@ async function handleAdminGetLeads(request, env) {
     }
     if (search) {
       whereConditions.push('(client_id LIKE ? OR agent_name LIKE ? OR district LIKE ?)');
-      params.push('%' + search + '%', '%' + search + '%', '%' + search + '%');
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
     }
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
@@ -815,7 +1214,7 @@ async function handleAdminGetLeads(request, env) {
         landing_page, page_location, page_referrer,
         utm_source, utm_medium, utm_campaign, gclid,
         traffic_type, traffic_source,
-        value, status, verified_by, created_at, verified_at, budget_range, transaction_type
+        value, status, verified_by, created_at, verified_at
       FROM leads ${whereClause}
       ORDER BY ${sortBy} ${sortOrder}
       LIMIT ? OFFSET ?
@@ -831,503 +1230,181 @@ async function handleAdminGetLeads(request, env) {
       SELECT DISTINCT traffic_type FROM leads WHERE traffic_type IS NOT NULL AND traffic_type != ''
     `).all();
     
-    const clientCountStmt = await env.lead_db.prepare(`
-      SELECT client_id, COUNT(*) as count FROM leads 
-      WHERE client_id IS NOT NULL AND client_id != '' 
-      GROUP BY client_id
-    `).all();
-    const clientCounts = {};
-    for (const row of clientCountStmt.results) {
-      clientCounts[row.client_id] = row.count;
-    }
-    
-    const verifiedClientsStmt = await env.lead_db.prepare(`
-      SELECT DISTINCT client_id FROM leads WHERE status = 'verified' AND client_id IS NOT NULL AND client_id != ''
-    `).all();
-    const verifiedClientIds = verifiedClientsStmt.results.map(r => r.client_id);
-    
     return new Response(JSON.stringify({
       success: true,
       data: dataResult.results,
-      clientCounts: clientCounts,
-      verifiedClientIds: verifiedClientIds,
-      pagination: {
-        page: page,
-        limit: limit,
-        total: total,
-        totalPages: Math.ceil(total / limit)
-      },
+      pagination: { page: page, limit: limit, total: total, totalPages: Math.ceil(total / limit) },
       filters: {
         agents: agentsStmt.results.map(r => r.agent_name),
         trafficTypes: trafficStmt.results.map(r => r.traffic_type)
       }
-    }), { 
-      headers: { 'Content-Type': 'application/json' } 
+    }), {
+      headers: { 'Content-Type': 'application/json' }
     });
     
   } catch (error) {
     console.error('Get leads error:', error);
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error.message 
-    }), { 
-      status: 500, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 }
 
 // ============================================
-// Admin Batch Update
+// 管理后台 - 批量更新线索
 // ============================================
+
 async function handleAdminBatchUpdate(request, env) {
   try {
-    const { leads, budgets, values, transactionTypes, verifiedBy } = await request.json();
+    const { leads, action, value } = await request.json();
     
     if (!leads || !Array.isArray(leads) || leads.length === 0) {
-      return new Response(JSON.stringify({ success: false, error: '没有选择线索' }), { 
-        status: 400, 
-        headers: { 'Content-Type': 'application/json' } 
+      return new Response(JSON.stringify({ success: false, error: '没有选择线索' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
       });
     }
     
     const now = new Date().toISOString();
     const results = [];
     
-    for (let i = 0; i < leads.length; i++) {
-      const lead = leads[i];
+    for (const lead of leads) {
       try {
-        const budgetValue = (budgets && budgets[i]) ? budgets[i] : '';
-        const transactionType = (transactionTypes && transactionTypes[i]) ? transactionTypes[i] : null;
-        const verifiedByValue = (verifiedBy && verifiedBy[i] !== undefined && verifiedBy[i] !== '') ? verifiedBy[i] : null;
-        let value = (values && values[i]) !== undefined ? values[i] : null;
-        
-        let newStatus;
-        if (value === null || value === undefined || value === '') { 
-          newStatus = 'pending'; 
-          value = null; 
-        } else if (value === 0) { 
-          newStatus = 'rejected'; 
-        } else { 
-          newStatus = 'verified'; 
-        }
-        
         let updateStmt, params;
         
-        if (newStatus === 'verified') {
+        if (action === 'verify') {
           updateStmt = await env.lead_db.prepare(`
-            UPDATE leads 
-            SET status = ?, 
-                verified_at = ?, 
-                verified_by = COALESCE(?, verified_by), 
-                budget_range = ?, 
-                value = ?, 
-                transaction_type = COALESCE(?, transaction_type) 
-            WHERE id = ?
+            UPDATE leads SET status = 'verified', verified_at = ?, verified_by = ?, value = ?
+            WHERE id = ? AND status != 'verified'
           `);
-          params = [newStatus, now, verifiedByValue, budgetValue, value, transactionType, lead.id];
-          
-        } else if (newStatus === 'rejected') {
+          params = [now, 'admin_batch', value || 2000, lead.id];
+        } else if (action === 'reject') {
           updateStmt = await env.lead_db.prepare(`
-            UPDATE leads 
-            SET status = ?, 
-                verified_at = ?, 
-                verified_by = COALESCE(?, verified_by), 
-                budget_range = ?, 
-                value = ?, 
-                transaction_type = COALESCE(?, transaction_type) 
-            WHERE id = ?
+            UPDATE leads SET status = 'rejected', verified_at = ?, verified_by = ?, value = 0
+            WHERE id = ? AND status != 'verified'
           `);
-          params = [newStatus, now, verifiedByValue, budgetValue, 0, transactionType, lead.id];
-          
-        } else { // pending
-          updateStmt = await env.lead_db.prepare(`
-            UPDATE leads 
-            SET status = ?, 
-                verified_at = NULL, 
-                verified_by = NULL, 
-                budget_range = NULL, 
-                value = NULL, 
-                transaction_type = COALESCE(?, transaction_type) 
-            WHERE id = ?
-          `);
-          params = [newStatus, transactionType, lead.id];
+          params = [now, 'admin_batch', lead.id];
+        } else {
+          continue;
         }
         
         const result = await updateStmt.bind(...params).run();
-        results.push({ 
-          id: lead.id, 
-          success: result.meta.rows_written > 0, 
-          status: newStatus 
-        });
+        results.push({ id: lead.id, success: result.meta.rows_written > 0 });
         
       } catch (err) {
-        results.push({ 
-          id: lead.id, 
-          success: false, 
-          error: err.message 
-        });
+        results.push({ id: lead.id, success: false, error: err.message });
       }
     }
     
-    const successCount = results.filter(r => r.success).length;
-    const failCount = results.filter(r => !r.success).length;
-    
-    return new Response(JSON.stringify({ 
-      success: true, 
-      results: results, 
-      summary: { 
-        total: leads.length, 
-        success: successCount, 
-        failed: failCount 
-      } 
-    }), { 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({
+      success: true,
+      results: results,
+      summary: {
+        total: leads.length,
+        success: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length
+      }
+    }), {
+      headers: { 'Content-Type': 'application/json' }
     });
     
   } catch (error) {
     console.error('Batch update error:', error);
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error.message 
-    }), { 
-      status: 500, 
-      headers: { 'Content-Type': 'application/json' } 
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 }
 
 // ============================================
-// Admin Export
+// 管理后台 - 导出 CSV
 // ============================================
 
 async function handleAdminExport(request, env) {
   try {
     const url = new URL(request.url);
-    const all = url.searchParams.get('all') === 'true';
     
-    let whereConditions = [];
-    let params = [];
+    const status = url.searchParams.get('status') || '';
+    const agent = url.searchParams.get('agent') || '';
+    const dateFrom = url.searchParams.get('date_from') || '';
+    const dateTo = url.searchParams.get('date_to') || '';
     
-    // Only apply filters if not exporting all
-    if (!all) {
-      const status = url.searchParams.get('status') || '';
-      const agent = url.searchParams.get('agent') || '';
-      const dateFrom = url.searchParams.get('date_from') || '';
-      const dateTo = url.searchParams.get('date_to') || '';
-      
-      if (status) { whereConditions.push('status = ?'); params.push(status); }
-      if (agent) { whereConditions.push('agent_name = ?'); params.push(agent); }
-      if (dateFrom) { whereConditions.push('date(created_at) >= date(?)'); params.push(dateFrom); }
-      if (dateTo) { whereConditions.push('date(created_at) <= date(?)'); params.push(dateTo); }
+    const whereConditions = [];
+    const params = [];
+    
+    if (status) {
+      whereConditions.push('status = ?');
+      params.push(status);
+    }
+    if (agent) {
+      whereConditions.push('agent_name = ?');
+      params.push(agent);
+    }
+    if (dateFrom) {
+      whereConditions.push('date(created_at) >= date(?)');
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      whereConditions.push('date(created_at) <= date(?)');
+      params.push(dateTo);
     }
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
+    
     const stmt = await env.lead_db.prepare(`
-      SELECT id, client_id, agent_name, click_type, rent, district, property_type, 
-             utm_source, utm_medium, utm_campaign, gclid, traffic_type, 
-             value, status, verified_by, created_at, verified_at, budget_range, transaction_type 
-      FROM leads ${whereClause} 
+      SELECT id, client_id, agent_name, click_type, rent, district, property_type,
+        utm_source, utm_medium, utm_campaign, gclid, traffic_type,
+        value, status, verified_by, created_at, verified_at
+      FROM leads ${whereClause}
       ORDER BY id DESC
     `);
     
     const result = await stmt.bind(...params).all();
     const leads = result.results;
     
-    const headers = ['ID', '客户号', '代理', '点击类型', '租金', '区域', '物业类型', 
-                     'UTM来源', 'UTM媒介', 'UTM活动', 'GCLID', '流量类型', 
-                     '预算', '价值', '状态', '处理人', '创建时间', '处理时间', '交易类型'];
+    const headers = ['ID', '客户号', '代理', '点击类型', '租金', '区域', '物业类型',
+      'UTM来源', 'UTM媒介', 'UTM活动', 'GCLID', '流量类型', '价值', '状态', '处理人', '创建时间', '处理时间'];
+    
     const csvRows = [headers.join(',')];
     
     for (const lead of leads) {
       const row = [
         lead.id,
-        '"' + (lead.client_id || '') + '"',
-        '"' + (lead.agent_name || '') + '"',
-        '"' + (lead.click_type || '') + '"',
-        '"' + (lead.rent || '') + '"',
-        '"' + (lead.district || '') + '"',
-        '"' + (lead.property_type || '') + '"',
-        '"' + (lead.utm_source || '') + '"',
-        '"' + (lead.utm_medium || '') + '"',
-        '"' + (lead.utm_campaign || '') + '"',
-        '"' + (lead.gclid || '') + '"',
-        '"' + (lead.traffic_type || '') + '"',
-        '"' + (lead.budget_range || '') + '"',
-        (lead.value === null || lead.value === undefined) ? '-' : lead.value,
+        `"${lead.client_id || ''}"`,
+        `"${lead.agent_name || ''}"`,
+        `"${lead.click_type || ''}"`,
+        `"${lead.rent || ''}"`,
+        `"${lead.district || ''}"`,
+        `"${lead.property_type || ''}"`,
+        `"${lead.utm_source || ''}"`,
+        `"${lead.utm_medium || ''}"`,
+        `"${lead.utm_campaign || ''}"`,
+        `"${lead.gclid || ''}"`,
+        `"${lead.traffic_type || ''}"`,
+        lead.value || 0,
         lead.status || '',
-        '"' + (lead.verified_by || '') + '"',
+        `"${lead.verified_by || ''}"`,
         lead.created_at || '',
-        lead.verified_at || '',
-        '"' + (lead.transaction_type || '') + '"'
+        lead.verified_at || ''
       ];
       csvRows.push(row.join(','));
     }
     
+    const csvContent = csvRows.join('\n');
     const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
     
-    // Add UTF-8 BOM (\uFEFF) to fix Chinese characters
-    const csvContent = '\uFEFF' + csvRows.join('\n');
-    
-    return new Response(csvContent, { 
-      status: 200, 
-      headers: { 
-        'Content-Type': 'text/csv; charset=utf-8', 
-        'Content-Disposition': 'attachment; filename="leads_export_' + timestamp + '.csv"' 
-      } 
-    });
-  } catch (error) {
-    return new Response(JSON.stringify({ success: false, error: error.message }), { 
-      status: 500, 
-      headers: { 'Content-Type': 'application/json' } 
-    });
-  }
-}
-
-// ============================================
-// Reinstatement Section
-// ============================================
-async function getGoogleAdsAccessToken(env) {
-  const clientId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CLIENT_ID");
-  const clientSecret = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CLIENT_SECRET");
-  const refreshToken = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_REFRESH_TOKEN");
-  
-  if (!clientId || !clientSecret || !refreshToken) {
-    throw new Error("Missing Google Ads credentials in KV");
-  }
-  
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-      grant_type: 'refresh_token'
-    })
-  });
-  
-  const data = await response.json();
-  if (!response.ok) {
-    throw new Error(`Failed to get access token: ${data.error}`);
-  }
-  return data.access_token;
-}
-
-async function createSingleConversionAdjustment(accessToken, customerId, conversionActionId, clientId, newValue, conversionDateTime, developerToken, loginCustomerId) {
-  let formattedDateTime = conversionDateTime;
-  if (formattedDateTime && !formattedDateTime.includes('+')) {
-    const date = new Date(formattedDateTime);
-    formattedDateTime = date.toISOString().slice(0, 19).replace('T', ' ') + '+00:00';
-  }
-  
-  const requestBody = {
-    conversion_adjustments: [{
-      conversion_action: `customers/${customerId}/conversionActions/${conversionActionId}`,
-      adjustment_type: "RESTATEMENT",
-      order_id: clientId,
-      conversion_date_time: formattedDateTime,
-      restatement_value: {
-        adjusted_value: newValue
+    return new Response(csvContent, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="leads_export_${timestamp}.csv"`
       }
-    }],
-    partial_failure: true
-  };
-  
-  const response = await fetch(`https://googleads.googleapis.com/v17/customers/${customerId}/conversionAdjustments:upload`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-      'developer-token': developerToken,
-      'login-customer-id': loginCustomerId
-    },
-    body: JSON.stringify(requestBody)
-  });
-  
-  const result = await response.json();
-  
-  if (!response.ok) {
-    throw new Error(result.error?.message || "API请求失败");
-  }
-  
-  return result;
-}
-
-async function handleGetReinstatementLeads(request, env) {
-  try {
-    const url = new URL(request.url);
-    const qualifiedOnly = url.searchParams.get("qualified_only") === "true";
-    
-    let sql = `
-      WITH ranked_leads AS (
-        SELECT client_id, 
-          value AS ConvValue, 
-          created_at AS latest_created_at,
-          verified_at AS latest_verified_at,
-          click_type,
-          ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at DESC) AS rn
-        FROM leads
-        WHERE gclid IS NOT NULL 
-          AND gclid != ""
-          AND client_id <> "unknown" 
-          AND client_id IS NOT NULL 
-          AND value IS NOT NULL
-          AND (reinstatement_submitted_at IS NULL OR datetime(reinstatement_submitted_at) < datetime("now", "-90 days"))
-          AND datetime(created_at) BETWEEN datetime("now", "-90 days") AND datetime("now", "-1 days")
-      )
-      SELECT client_id, ConvValue, latest_created_at, latest_verified_at, click_type,
-        CAST((julianday("now") - julianday(latest_created_at)) AS INTEGER) as days_since_creation
-      FROM ranked_leads
-      WHERE rn = 1 
-        AND ConvValue IS NOT NULL
-    `;
-    
-    const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.all();
-    
-    const leads = [];
-    
-    for (const lead of result.results) {
-      let daysSinceCreation = lead.days_since_creation || 0;
-      
-      leads.push({
-        id: lead.client_id,
-        client_id: lead.client_id,
-        value: lead.ConvValue,
-        verified_at: lead.latest_verified_at,
-        created_at: lead.latest_created_at,
-        click_type: lead.click_type || 'unknown',
-        days_since_creation: daysSinceCreation,
-        is_qualified: true,
-        reinstatement_submitted: 0
-      });
-    }
-    
-    const stats = {
-      total: leads.length,
-      qualified: leads.length,
-      pending_2days: 0,
-      already_submitted: 0,
-      sibling_submitted: 0
-    };
-    
-    return new Response(JSON.stringify({
-      success: true,
-      leads: leads,
-      stats: stats
-    }), {
-      headers: { "Content-Type": "application/json" }
     });
     
   } catch (error) {
-    console.error("Get reinstatement leads error:", error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
-    });
-  }
-}
-
-async function handleConversionTrend(env, request) {
-  try {
-    const url = new URL(request.url);
-    const dateFrom = url.searchParams.get('date_from') || '';
-    const dateTo = url.searchParams.get('date_to') || '';
-    const groupBy = url.searchParams.get('group_by') || 'day';
-    
-    // Build date filter with HK timezone
-    let dateCondition = '';
-    let params = [];
-    
-    // Convert filter dates to UTC range (since created_at is UTC)
-    if (dateFrom && dateTo) {
-      // Filter uses UTC, but for HK date ranges, convert to UTC
-      dateCondition = ' AND datetime(created_at) >= datetime(?) AND datetime(created_at) <= datetime(?)';
-      // Convert HK date to UTC start/end
-      params.push(`${dateFrom} 00:00:00+08:00`, `${dateTo} 23:59:59+08:00`);
-    } else if (dateFrom) {
-      dateCondition = ' AND datetime(created_at) >= datetime(?)';
-      params.push(`${dateFrom} 00:00:00+08:00`);
-    } else if (dateTo) {
-      dateCondition = ' AND datetime(created_at) <= datetime(?)';
-      params.push(`${dateTo} 23:59:59+08:00`);
-    }
-    
-    // Determine SQL grouping using HK time
-    let dateFormat, orderBy;
-    switch (groupBy) {
-      case 'week':
-        // Group by week in HK time
-        dateFormat = `strftime('%Y', datetime(created_at, '+8 hours')) || '-W' || strftime('%W', datetime(created_at, '+8 hours'))`;
-        orderBy = `min(datetime(created_at, '+8 hours'))`;
-        break;
-      case 'month':
-        dateFormat = `strftime('%Y-%m', datetime(created_at, '+8 hours'))`;
-        orderBy = `min(datetime(created_at, '+8 hours'))`;
-        break;
-      default: // day
-        dateFormat = `date(datetime(created_at, '+8 hours'))`;
-        orderBy = `date(datetime(created_at, '+8 hours'))`;
-    }
-    
-    const sql = `
-      WITH valid_conversions AS (
-      SELECT 
-        created_at,
-        gclid,
-        ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
-      FROM leads
-      WHERE value > 0
-        ${dateCondition}
-      )
-      SELECT 
-        ${dateFormat} as period,
-        SUM(CASE WHEN (gclid IS NOT NULL AND gclid != '') THEN 1 ELSE 0 END) as paid_count,
-        SUM(CASE WHEN (gclid IS NULL OR gclid = '') THEN 1 ELSE 0 END) as organic_count
-      FROM valid_conversions
-      WHERE rn = 1
-      GROUP BY period
-      ORDER BY ${orderBy} ASC
-    `;
-    
-    const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.bind(...params).all();
-    
-    const periods = [];
-    const paidCounts = [];
-    const organicCounts = [];
-    
-    for (const row of result.results) {
-      let displayPeriod = row.period;
-      if (groupBy === 'week') {
-        const match = row.period.match(/(\d{4})-W(\d+)/);
-        if (match) {
-          displayPeriod = `${match[1]} 第${match[2]}周`;
-        }
-      } else if (groupBy === 'month') {
-        const match = row.period.match(/(\d{4})-(\d{2})/);
-        if (match) {
-          displayPeriod = `${match[1]}年${parseInt(match[2])}月`;
-        }
-      }
-      periods.push(displayPeriod);
-      paidCounts.push(row.paid_count);
-      organicCounts.push(row.organic_count);
-    }
-    
-    return new Response(JSON.stringify({
-      success: true,
-      periods: periods,
-      paid: paidCounts,
-      organic: organicCounts,
-      groupBy: groupBy
-    }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-  } catch (error) {
-    console.error('Conversion trend error:', error);
+    console.error('Export error:', error);
     return new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
@@ -1336,481 +1413,138 @@ async function handleConversionTrend(env, request) {
 }
 
 // ============================================
-// HTML Page
+// 管理后台 - HTML 页面
 // ============================================
-
 async function handleAdminPage(env) {
   const html = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>LeasingHub 管理后台</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f0f2f5; }
     .login-box { max-width: 400px; margin: 100px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
     .login-box input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
     .login-box button { width: 100%; padding: 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; }
     .error { color: red; margin-top: 10px; display: none; }
-    .admin-box { padding: 20px; }
-    
-    /* Stats Grid */
-    .stats-grid { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
-    .stat-card { background: white; padding: 20px; border-radius: 12px; min-width: 150px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .stat-card .number { font-size: 32px; font-weight: bold; }
-    
-    /* Table */
-    .table-wrapper { overflow-x: auto; }
-    .wrap-text { word-wrap: break-word; white-space: normal; word-break: break-word; max-width: 250px; }
-    table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; min-width: 1300px; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; white-space: nowrap; }
-    th { background: #f8f9fa; position: sticky; top: 0; }
-    
-    /* Buttons */
-    .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px; }
-    .btn-primary { background: #667eea; color: white; }
-    .btn-danger { background: #dc3545; color: white; }
-    .btn-success { background: #28a745; color: white; }
-    .btn-warning { background: #ffc107; color: #333; }
-    .btn-small { padding: 6px 12px; font-size: 12px; }
-    
-    /* Filters */
-    .filters { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; background: white; padding: 15px; border-radius: 8px; }
-    .filter-group { display: flex; flex-direction: column; }
-    .filter-group label { font-size: 12px; margin-bottom: 4px; }
-    .filter-group select, .filter-group input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
-    
-    /* Form Elements */
-    .status-input { padding: 6px 12px; border-radius: 20px; border: none; font-size: 12px; font-weight: bold; text-align: center; width: 80px; cursor: default; background-color: #e9ecef; }
-    .budget-select { padding: 6px; border-radius: 4px; border: 1px solid #ddd; min-width: 120px; }
-    .tx-type-select { padding: 6px; border-radius: 4px; border: 1px solid #ddd; width: 70px; min-width: 70px; }
-    .value-display { background: #e9ecef; text-align: center; width: 100px; padding: 6px; border-radius: 4px; border: 1px solid #ddd; }
-    .pending-change { background: #fff3cd !important; }
-    .budget-zero-option { color: #dc3545; font-weight: bold; }
-    .client-link { color: #667eea; text-decoration: underline; cursor: pointer; }
-    .client-link:hover { color: #5a67d8; }
-    .frozen-row { background-color: #d3d3d3; opacity: 0.9; }
-    .frozen-row td { background-color: #d3d3d3; }
-    select:disabled, input:disabled, button:disabled { cursor: not-allowed; opacity: 0.6; }
-    
-    /* Modal */
-    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
-    .modal-content { position: relative; background: white; margin: 50px auto; padding: 20px; width: 80%; max-width: 900px; border-radius: 12px; max-height: 80%; overflow: auto; }
-    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #eee; }
-    .modal-close { font-size: 28px; cursor: pointer; color: #999; line-height: 1; }
-    .modal-close:hover { color: #333; }
-    .client-leads-table { width: 100%; border-collapse: collapse; }
-    .client-leads-table th, .client-leads-table td { padding: 10px; text-align: left; border-bottom: 1px solid #eee; }
-    .client-leads-table th { background: #f8f9fa; }
-    .status-badge-small { padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: bold; display: inline-block; }
-    .status-pending-small { background: #ffc107; color: #856404; }
-    .status-verified-small { background: #28a745; color: white; }
-    .status-rejected-small { background: #dc3545; color: white; }
-    
-    /* Layout */
-    .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
-    .button-bar { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e0e0e0; }
-   .stats-and-hotline-row {
-    display: flex;
-    justify-content: flex-end;
-    align-items: flex-start;
-    gap: 20px;
-    margin-bottom: 20px;
-    flex-wrap: wrap;
-}
-
-.stats-grid {
-    flex: 1;
-    min-width: 300px;
-    display: flex;
-    gap: 20px;
-    flex-wrap: wrap;
-}
-
-.hotline-card {
-    background: white;
-    padding: 15px 20px;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    width: 400px;
-    flex-shrink: 0;
-}    .hotline-select { padding: 6px; border: 1px solid #ddd; border-radius: 4px; width: 220px; }
-    .hotline-item { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-    .hotline-item label { font-size: 13px; font-weight: 500; width: 80px; }
-    .hotline-item button { margin-left: 10px; white-space: nowrap; }
-    .hotline-msg { font-size: 12px; margin-left: 10px; }
-    
-    /* Verified By Select */
-    .verified-by-select { padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd; min-width: 100px; font-size: 12px; }
-    
-.combined-stats-container {
-    width: 320px;
-    flex-shrink: 0;
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    overflow: hidden;
-}
-
-.combined-stats-card {
-    padding: 12px;
-}
-
-.combined-stats-header-row {
-    display: flex;
-    align-items: center;
-    padding: 8px 0;
-    border-bottom: 2px solid #e0e0e0;
-    font-weight: 600;
-    font-size: 12px;
-    margin-bottom: 4px;
-}
-
-.combined-stats-row {
-    display: flex;
-    align-items: center;
-    padding: 8px 0;
-    border-bottom: 1px solid #f0f0f0;
-    font-size: 12px;
-}
-
-.combined-stats-header-label,
-.combined-stats-row-label {
-    width: 70px;
-    flex-shrink: 0;
-}
-
-.combined-stats-header-paid,
-.combined-stats-row-paid {
-    width: 110px;
-    text-align: center;
-    flex-shrink: 0;
-}
-
-.combined-stats-header-nonpaid,
-.combined-stats-row-nonpaid {
-    width: 110px;
-    text-align: center;
-    flex-shrink: 0;
-}
-
-.combined-stats-header-paid {
-    color: #1976d2;
-}
-
-.combined-stats-header-nonpaid {
-    color: #2e7d32;
-}
-
-.combined-stats-row-paid {
-    color: #1976d2;
-    font-weight: 600;
-}
-
-.combined-stats-row-nonpaid {
-    color: #2e7d32;
-    font-weight: 600;
-}
-
-.combined-stats-total {
-    margin-top: 12px;
-    padding: 8px 10px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 8px;
-    font-size: 11px;
-    font-weight: 600;
-    text-align: center;
-}
-    /* Chart Container */
-.chart-container {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-.chart-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.chart-header h4 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-}
-.chart-group-selector {
-  display: flex;
-  gap: 8px;
-}
-.btn-group-btn {
-  padding: 6px 14px;
-  border: 1px solid #ddd;
-  background: #f8f9fa;
-  border-radius: 20px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.2s;
-}
-.btn-group-btn.active {
-  background: #667eea;
-  color: white;
-  border-color: #667eea;
-}
-.btn-group-btn:hover {
-  background: #e9ecef;
-}
-.no-data-msg {
-  text-align: center;
-  padding: 60px;
-  color: #999;
-}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    .admin-box { display: none; }
+    table { width: 100%; border-collapse: collapse; background: white; }
+    th, td { padding: 10px; border: 1px solid #ddd; text-align: left; }
+    th { background: #f5f5f5; cursor: pointer; }
+    .status-pending { color: orange; }
+    .status-verified { color: green; }
+    .status-rejected { color: red; }
+    .filters { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .filters select, .filters input { padding: 8px; }
+    .btn { padding: 8px 16px; cursor: pointer; }
+    .btn-success { background: #28a745; color: white; border: none; }
+    .btn-danger { background: #dc3545; color: white; border: none; }
+    .pagination { margin-top: 20px; text-align: center; }
+    .pagination button { margin: 0 5px; padding: 5px 10px; }
+    .sidebar { position: fixed; left: 0; top: 0; width: 200px; height: 100%; background: #1a1a2e; color: white; padding: 20px; }
+    .main-content { margin-left: 220px; }
+    .stat-card { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: inline-block; width: 150px; margin-right: 15px; text-align: center; }
+  </style>
 </head>
 <body>
 <div id="app"></div>
+
 <script>
 var token = localStorage.getItem('admin_token');
-var currentPage = 1;
-var currentFilters = { status: '', agent: '', traffic_type: '', date_from: '', date_to: '', search: '' };
-var selectedLeads = new Set();
-var clientCounts = {};
-var verifiedClientIds = [];
-var reinstatementLeads = [];
-var reinstatementStats = {};
-var selectedReinIds = new Set();
-var agentsList = [];
-var conversionChart = null;
-var currentGroupBy = 'day';
 
-var rentBudgetOptions = [
-  { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
-  { value: 'below_20k', label: 'Below 2萬', isZero: false },
-  { value: '20k_50k', label: '2萬 - 5萬', isZero: false },
-  { value: '50k_80k', label: '5萬 - 8萬', isZero: false },
-  { value: '80k_120k', label: '8萬 - 12萬', isZero: false },
-  { value: '120k_160k', label: '12萬 - 16萬', isZero: false },
-  { value: 'above_160k', label: 'Above 16萬', isZero: false }
-];
-
-var buyBudgetOptions = [
-  { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
-  { value: 'below_8m', label: 'Below 800萬', isZero: false },
-  { value: '8m_15m', label: '800萬 - 1500萬', isZero: false },
-  { value: '15m_20m', label: '1500萬 - 2000萬', isZero: false },
-  { value: '20m_50m', label: '2000萬 - 5000萬', isZero: false },
-  { value: 'above_50m', label: 'Above 5000萬', isZero: false }
-];
-
-function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/[&<>]/g, function(m) {
-    if (m === '&') return '&amp;';
-    if (m === '<') return '&lt;';
-    if (m === '>') return '&gt;';
-    return m;
-  });
-}
-
-function loadConversionTrend() {
-  var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
-  var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
-  
-  var url = '/api/conversion-trend?group_by=' + currentGroupBy;
-  if (dateFrom) url += '&date_from=' + dateFrom;
-  if (dateTo) url += '&date_to=' + dateTo;
-  
-  fetch(url)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var canvas = document.getElementById('conversionChart');
-      if (!canvas) return;
-      
-      var parent = canvas.parentElement;
-      var existingMsg = parent.querySelector('.no-data-msg');
-      if (existingMsg) existingMsg.remove();
-      canvas.style.display = 'block';
-      
-      if (data.success && data.periods.length > 0) {
-        var ctx = canvas.getContext('2d');
-        
-        if (conversionChart) {
-          conversionChart.destroy();
-        }
-        
-        conversionChart = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: data.periods,
-            datasets: [
-              {
-                label: '付费转化',
-                data: data.paid,
-                borderColor: '#1976d2',
-                backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3
-              },
-              {
-                label: '自然转化',
-                data: data.organic,
-                borderColor: '#2e7d32',
-                backgroundColor: 'rgba(46, 125, 50, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3
-              }
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-              legend: {
-                position: 'top',
-              },
-              tooltip: {
-                mode: 'index',
-                intersect: false,
-                callbacks: {
-                  label: function(context) {
-                    return context.dataset.label + ': ' + context.parsed.y + ' 个';
-                  }
-                }
-              }
-            },
-            scales: {
-              y: {
-                beginAtZero: true,
-                title: {
-                  display: true,
-                  text: '转化数量'
-                },
-                ticks: {
-                  stepSize: 1
-                }
-              },
-              x: {
-                title: {
-                  display: true,
-                  text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份')
-                }
-              }
-            }
-          }
-        });
-      } else {
-        canvas.style.display = 'none';
-        var msg = document.createElement('div');
-        msg.className = 'no-data-msg';
-        msg.innerHTML = '📊 暂无有效转化数据<br><span style="font-size:12px;">请尝试其他日期范围</span>';
-        parent.appendChild(msg);
-      }
-    })
-    .catch(function(err) {
-      console.error('Load conversion trend error:', err);
-    });
-}
-
-function setChartGroup(group) {
-  currentGroupBy = group;
-  var buttons = document.querySelectorAll('.btn-group-btn');
-  for (var i = 0; i < buttons.length; i++) {
-    if (buttons[i].getAttribute('data-group') === group) {
-      buttons[i].classList.add('active');
-    } else {
-      buttons[i].classList.remove('active');
-    }
+function render() {
+  if (token) {
+    showAdmin();
+  } else {
+    showLogin();
   }
-  loadConversionTrend();
 }
 
-function loadAgents() {
-  return fetch("/api/get-agents")
+function showLogin() {
+  document.getElementById('app').innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
+}
+
+function showAdmin() {
+  document.getElementById('app').innerHTML = '<div class="sidebar"><h3>LeasingHub</h3><button onclick="logout()" style="margin-top:20px">退出登录</button></div><div class="main-content"><div id="stats"></div><div class="filters" id="filters"></div><div><button class="btn btn-success" onclick="batchVerify()">批量确认有效</button> <button class="btn btn-danger" onclick="batchReject()">批量标记垃圾</button> <span id="selectedCount" style="margin-left:20px"></span></div><div id="table"></div><div id="pagination" class="pagination"></div></div>';
+  loadStats();
+  loadFilters();
+  loadLeads();
+}
+
+window.login = function() {
+  var phone = document.getElementById('phone').value;
+  var password = document.getElementById('password').value;
+  fetch('/admin/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: phone, password: password })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      token = data.token;
+      localStorage.setItem('admin_token', token);
+      showAdmin();
+    } else {
+      var err = document.getElementById('loginError');
+      err.textContent = data.error || '登录失败';
+      err.style.display = 'block';
+    }
+  });
+};
+
+window.logout = function() {
+  localStorage.removeItem('admin_token');
+  token = null;
+  showLogin();
+};
+
+function loadStats() {
+  fetch('/admin/api/stats')
     .then(function(r) { return r.json(); })
     .then(function(data) {
-      if (data.success && data.agents) {
-        agentsList = data.agents;
+      if (data.success) {
+        var html = '';
+        html += '<div class="stat-card"><h3>待处理</h3><div>' + (data.stats.pending || 0) + '</div></div>';
+        html += '<div class="stat-card"><h3>已验证</h3><div>' + (data.stats.verified || 0) + '</div></div>';
+        html += '<div class="stat-card"><h3>已拒绝</h3><div>' + (data.stats.rejected || 0) + '</div></div>';
+        html += '<div class="stat-card"><h3>总计</h3><div>' + (data.stats.total || 0) + '</div></div>';
+        document.getElementById('stats').innerHTML = html;
       }
-      return agentsList;
-    })
-    .catch(function(err) {
-      console.error("Load agents error:", err);
-      return [];
-    });
-}
-
-function exportAllLeads() {
-  // Show loading indicator
-  var originalText = event.target.innerText;
-  event.target.innerText = '导出中...';
-  event.target.disabled = true;
-  
-  // Fetch all leads without any filters
-  fetch('/api/export?all=true')
-    .then(function(response) {
-      if (!response.ok) throw new Error('导出失败');
-      return response.blob();
-    })
-    .then(function(blob) {
-      // Create download link
-      var url = window.URL.createObjectURL(blob);
-      var a = document.createElement('a');
-      a.href = url;
-      a.download = 'leads_export_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.csv';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      
-      // Reset button
-      event.target.innerText = originalText;
-      event.target.disabled = false;
-    })
-    .catch(function(err) {
-      alert('导出失败: ' + err.message);
-      event.target.innerText = originalText;
-      event.target.disabled = false;
     });
 }
 
 function loadFilters() {
-  fetch('/api/leads?limit=1')
+  fetch('/admin/api/leads?limit=1')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success && data.filters) {
-        var html = '<div class="filters">';
-        html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option></select></div>';
-        html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
+        var html = '<select id="filterStatus"><option value="">全部状态</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option></select>';
+        html += '<select id="filterAgent"><option value="">全部代理</option>';
         for (var i = 0; i < data.filters.agents.length; i++) {
           html += '<option value="' + data.filters.agents[i] + '">' + data.filters.agents[i] + '</option>';
         }
-        html += '</select></div>';
-        html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option>';
+        html += '</select>';
+        html += '<select id="filterTraffic"><option value="">全部来源</option>';
         for (var j = 0; j < data.filters.trafficTypes.length; j++) {
           html += '<option value="' + data.filters.trafficTypes[j] + '">' + data.filters.trafficTypes[j] + '</option>';
         }
-        html += '</select></div>';
-        html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom"></div>';
-        html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo"></div>';
-        html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
-        html += '<button class="btn btn-primary" onclick="applyFilters()">搜索</button>';
+        html += '</select>';
+        html += '<input type="date" id="filterDateFrom" placeholder="开始日期">';
+        html += '<input type="date" id="filterDateTo" placeholder="结束日期">';
+        html += '<input type="text" id="filterSearch" placeholder="搜索">';
+        html += '<button onclick="applyFilters()">搜索</button>';
         html += '<button onclick="resetFilters()">重置</button>';
-        html += '</div>';
-        document.getElementById('filtersPanel').innerHTML = html;
+        document.getElementById('filters').innerHTML = html;
       }
     });
 }
 
-function applyFilters() {
+var currentPage = 1;
+var currentFilters = {};
+var selectedLeads = new Set();
+
+window.applyFilters = function() {
   currentFilters = {
     status: document.getElementById('filterStatus').value,
     agent: document.getElementById('filterAgent').value,
@@ -1822,1102 +1556,183 @@ function applyFilters() {
   currentPage = 1;
   selectedLeads.clear();
   loadLeads();
-  loadCombinedConversionStats();
-loadConversionTrend();
-}
+};
 
-function resetFilters() {
-  var fs = document.getElementById('filterStatus');
-  var fa = document.getElementById('filterAgent');
-  var ft = document.getElementById('filterTraffic');
-  var fd1 = document.getElementById('filterDateFrom');
-  var fd2 = document.getElementById('filterDateTo');
-  var fsearch = document.getElementById('filterSearch');
-  if (fs) fs.value = '';
-  if (fa) fa.value = '';
-  if (ft) ft.value = '';
-  if (fd1) fd1.value = '';
-  if (fd2) fd2.value = '';
-  if (fsearch) fsearch.value = '';
+window.resetFilters = function() {
+  document.getElementById('filterStatus').value = '';
+  document.getElementById('filterAgent').value = '';
+  document.getElementById('filterTraffic').value = '';
+  document.getElementById('filterDateFrom').value = '';
+  document.getElementById('filterDateTo').value = '';
+  document.getElementById('filterSearch').value = '';
   applyFilters();
-}
+};
 
 function loadLeads() {
-  var url = '/api/leads?page=' + currentPage + '&limit=20';
+  var url = '/admin/api/leads?page=' + currentPage + '&limit=20';
   if (currentFilters.status) url += '&status=' + currentFilters.status;
   if (currentFilters.agent) url += '&agent=' + currentFilters.agent;
   if (currentFilters.traffic_type) url += '&traffic_type=' + currentFilters.traffic_type;
   if (currentFilters.date_from) url += '&date_from=' + currentFilters.date_from;
   if (currentFilters.date_to) url += '&date_to=' + currentFilters.date_to;
   if (currentFilters.search) url += '&search=' + encodeURIComponent(currentFilters.search);
-  
   fetch(url)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success) {
-        clientCounts = data.clientCounts || {};
-        verifiedClientIds = data.verifiedClientIds || [];
         renderTable(data.data);
-        if (data.pagination) {
-          renderPagination(data.pagination);
-        }
+        renderPagination(data.pagination);
       }
-    })
-    .catch(function(err) {
-      console.error("Load leads error:", err);
     });
 }
 
 function renderTable(leads) {
-  var container = document.getElementById('tablePanel');
   if (!leads || leads.length === 0) {
-    container.innerHTML = '<div style="text-align:center;padding:40px">暂无数据</div>';
+    document.getElementById('table').innerHTML = '<p>暂无数据</p>';
     return;
   }
-  
-  var html = '<div class="table-wrapper"><table><thead><tr>';
-  html += '<th>ID</th><th>客户号</th><th>询问途径</th><th>代理</th><th>区域</th><th>租金</th><th>售价</th>';
-  html += '<th>交易类型</th><th>来源</th><th>Campaign</th><th>状态</th><th>预算</th><th>转化价值</th>';
-  html += '<th>询问时间</th><th>验证人/跟进人</th><th>验证时间</th><th>操作</th>';
-  html += '</thead><tbody>';
-  
+  var html = '<table><thead><tr><th><input type="checkbox" id="selectAll"></th><th>ID</th><th>客户号</th><th>代理</th><th>区域</th><th>租金</th><th>来源</th><th>状态</th><th>价值</th><th>时间</th><th>操作</th></tr></thead><tbody>';
   for (var i = 0; i < leads.length; i++) {
     var lead = leads[i];
-    var frozen = isFrozen(lead.client_id, lead.status, verifiedClientIds);
-    
-    var verifiedBy = lead.verified_by || '-';
-    if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
-    var verifiedAt = lead.verified_at ? new Date(lead.verified_at).toLocaleString() : '-';
-
-    var isRent = true;
-    if (lead.budget_range && lead.budget_range !== '' && lead.budget_range !== null) {
-      isRent = !lead.budget_range.includes('m') && lead.budget_range !== '0';
-    }
-    var transactionTypeDisplay = isRent ? '租用' : '购买';
-    var budgetOptions = isRent ? rentBudgetOptions : buyBudgetOptions;
-    var currentBudget = lead.budget_range || '';
-    
-    var currentValue = (lead.value !== null && lead.value !== undefined) ? lead.value : null;
-    var displayValue = '';
-    var displayPlaceholder = '';
-
-    if (currentValue === null) {
-      displayValue = '';
-      displayPlaceholder = '-';
-    } else if (currentValue === 0) {
-      displayValue = '0';
-      displayPlaceholder = '';
-    } else {
-      displayValue = currentValue;
-      displayPlaceholder = '';
-    }
-    
-    var statusText = '';
-    var statusBg = '';
-    var statusColor = '';
-    if (currentValue === null) {
-      statusText = '待处理';
-      statusBg = '#ffc107';
-      statusColor = '#856404';
-    } else if (currentValue === 0) {
-      statusText = '已拒绝';
-      statusBg = '#dc3545';
-      statusColor = 'white';
-    } else {
-      statusText = '已验证';
-      statusBg = '#28a745';
-      statusColor = 'white';
-    }
-    
-    var leadCount = clientCounts[lead.client_id] || 0;
-    var hasMultipleLeads = leadCount > 1;
-    var clientDisplay = (hasMultipleLeads && lead.client_id && lead.client_id !== '-') 
-      ? '<span class="client-link" onclick="showClientLeads(\\'' + (lead.client_id || '') + '\\')">' + (lead.client_id || '-') + ' (' + leadCount + ')</span>'
-      : (lead.client_id || '-');
-    
-    var rowClass = frozen ? 'frozen-row' : '';
-    html += '<tr class="' + rowClass + '">';
+    var checked = selectedLeads.has(lead.id) ? 'checked' : '';
+    html += '<tr>';
+    html += '<td><input type="checkbox" class="lead-cb" data-id="' + lead.id + '" ' + checked + '></td>';
     html += '<td>' + lead.id + '</td>';
-    html += '<td class="wrap-text">' + clientDisplay + '</td>';  
-    html += '<td>' + lead.click_type + '</td>';    
+    html += '<td>' + (lead.client_id || '-') + '</td>';
     html += '<td>' + (lead.agent_name || '-') + '</td>';
     html += '<td>' + (lead.district || '-') + '</td>';
     html += '<td>' + (lead.rent || '-') + '</td>';
-    html += '<td>' + (lead.property_price || '-') + '</td>'; 
-    html += '<td><select id="tx_type_' + lead.id + '" class="tx-type-select" onchange="onTransactionTypeChange(' + lead.id + ')" ' + (frozen ? 'disabled' : '') + '>';
-    html += '<option value="rent" ' + (lead.transaction_type === 'rent' ? 'selected' : '') + '>租用</option>';
-    html += '<option value="buy" ' + (lead.transaction_type === 'buy' ? 'selected' : '') + '>购买</option>';
-    html += '</select></td>';
-    html += '<td><span>' + (lead.traffic_type || 'direct') + '</span></td>';
-    html += '<td>' + (lead.utm_campaign || '-') + '</td>'; 
-    html += '<td><input type="text" id="status_' + lead.id + '" value="' + statusText + '" disabled class="status-input" style="background-color:' + statusBg + ';color:' + statusColor + ';"></td>';
-
-    // Budget dropdown
-    html += '<td><select id="budget_' + lead.id + '" class="budget-select" data-original-budget="' + (currentBudget && currentBudget !== '' ? escapeHtml(currentBudget) : '') + '" onchange="updateValueFromBudget(' + lead.id + ')" ' + (frozen ? 'disabled' : '') + '>';
-    html += '<option value="">请选择</option>';
-    for (var j = 0; j < budgetOptions.length; j++) {
-      var opt = budgetOptions[j];
-      var selected = (currentBudget === opt.value) ? 'selected' : '';
-      html += '<option value="' + opt.value + '" ' + selected + '>' + opt.label + '</option>';
-    }
-    html += '</select></td>';
-
-
-
-    html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
+    html += '<td>' + (lead.traffic_type || '-') + '</td>';
+    html += '<td class="status-' + lead.status + '">' + (lead.status === 'pending' ? '待处理' : (lead.status === 'verified' ? '已验证' : '已拒绝')) + '</td>';
+    html += '<td><input type="number" id="val_' + lead.id + '" value="' + (lead.value || 0) + '" style="width:80px"></td>';
     html += '<td>' + new Date(lead.created_at).toLocaleString() + '</td>';
-
-
-// 验证人 dropdown
-html += '<td><select id="verified_by_' + lead.id + '" class="verified-by-select" data-lead-id="' + lead.id + '" ' + (frozen ? 'disabled' : '') + '>';
-html += '<option value="">-</option>';
-for (var a = 0; a < agentsList.length; a++) {
-  var agent = agentsList[a];
-  var agentName = agent.agent_name;
-  var selected = (verifiedBy === agentName || (lead.verified_by === agentName)) ? 'selected' : '';
-  html += '<option value="' + escapeHtml(agentName) + '" ' + selected + '>' + escapeHtml(agentName) + '</option>';
-}
-html += '</select></td>';
-
-
-
-
-    html += '<td>' + verifiedAt + '<td>';
-    html += '<td><button class="btn btn-primary" onclick="updateLead(' + lead.id + ')" style="padding:4px 8px;font-size:12px" ' + (frozen ? 'disabled' : '') + '>保存</button></td>';
+    html += '<td><button onclick="updateLead(' + lead.id + ', true)">确认</button></td>';
     html += '</tr>';
   }
-  html += '</tbody></table></div>';
-  container.innerHTML = html;
-}
-
-function isFrozen(clientId, currentStatus, verifiedClientIdsList) {
-  if (!clientId || clientId === '-') return false;
-  if (currentStatus === 'verified') return false;
-  return verifiedClientIdsList.indexOf(clientId) !== -1;
-}
-
-function showClientLeads(clientId) {
-  if (!clientId || clientId === '-') return;
+  html += '</tbody></td>';
+  document.getElementById('table').innerHTML = html;
   
-  var modal = document.getElementById('clientModal');
-  if (!modal) {
-    var modalHtml = '<div id="clientModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>客户线索详情 - <span id="modalClientId"></span></h3><span class="modal-close" onclick="closeModal()">&times;</span></div><div id="modalBody"><div style="text-align:center;padding:40px">加载中...</div></div></div></div>';
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
-    modal = document.getElementById('clientModal');
-  }
-  
-  document.getElementById('modalClientId').innerText = clientId;
-  modal.style.display = 'block';
-  
-  fetch('/api/client-leads?client_id=' + encodeURIComponent(clientId))
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success) {
-        var html = '<table class="client-leads-table"><thead><tr>';
-        html += '<th>ID</th>';
-        html += '<th>状态</th>';
-        html += '<th>验证人</th>';
-        html += '<th>验证日期</th>';
-        html += '<th>创建日期</th>';
-        html += '<th>转化价值</th>';
-        html += '</tr></thead><tbody>';
-        
-        for (var i = 0; i < data.leads.length; i++) {
-          var lead = data.leads[i];
-          var statusText = '';
-          var statusClass = '';
-          if (lead.status === 'pending') {
-            statusText = '待处理';
-            statusClass = 'status-pending-small';
-          } else if (lead.status === 'verified') {
-            statusText = '已验证';
-            statusClass = 'status-verified-small';
-          } else {
-            statusText = '已拒绝';
-            statusClass = 'status-rejected-small';
-          }
-          
-          var verifiedBy = lead.verified_by || '-';
-          if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
-          var verifiedAt = lead.verified_at ? new Date(lead.verified_at).toLocaleString() : '-';
-          var createdAt = lead.created_at ? new Date(lead.created_at).toLocaleString() : '-';
-          var valueDisplay = (lead.value === null || lead.value === undefined) ? '-' : lead.value;
-          
-          html += '<tr>';
-          html += '<td>' + lead.id + '</td>';
-          html += '<td><span class="' + statusClass + '">' + statusText + '</span></td>';
-          html += '<td>' + verifiedBy + '</td>';
-          html += '<td>' + verifiedAt + '</td>';
-          html += '<td>' + createdAt + '</td>';
-          html += '<td>' + valueDisplay + '</td>';
-          html += '</tr>';
-        }
-        html += '</tbody></table>';
-        document.getElementById('modalBody').innerHTML = html;
+  // 绑定复选框事件
+  var cbs = document.querySelectorAll('.lead-cb');
+  for (var j = 0; j < cbs.length; j++) {
+    cbs[j].addEventListener('change', function(e) {
+      var id = parseInt(e.target.getAttribute('data-id'));
+      if (e.target.checked) {
+        selectedLeads.add(id);
       } else {
-        document.getElementById('modalBody').innerHTML = '<div style="color:red">加载失败: ' + data.error + '</div>';
+        selectedLeads.delete(id);
       }
-    })
-    .catch(function(err) {
-      document.getElementById('modalBody').innerHTML = '<div style="color:red">网络错误</div>';
+      document.getElementById('selectedCount').innerHTML = '已选择 ' + selectedLeads.size + ' 条';
     });
-}
-
-function closeModal() {
-  var modal = document.getElementById('clientModal');
-  if (modal) modal.style.display = 'none';
-}
-
-window.onclick = function(event) {
-  var modal = document.getElementById('clientModal');
-  if (event.target === modal) closeModal();
-};
-
-function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
-  if (budgetRange === '0') return 0;
-  
-  function extractNumber(str) {
-    if (!str || str === '-') return 0;
-    var match = str.match(/(\\d+(?:,\\d+)?)/);
-    if (!match) return 0;
-    return parseInt(match[1].replace(/,/g, ''), 10);
   }
-  var rentNum = extractNumber(rentValue);
-  var priceNum = extractNumber(priceValue);
-  
-  if (isRent) {
-    switch (budgetRange) {
-      case 'below_20k': return 2000;
-      case '20k_50k': return Math.round(35000 * 0.3);
-      case '50k_80k': return Math.round(65000 * 0.3);
-      case '80k_120k': return Math.round(100000 * 0.3);
-      case '120k_160k': return Math.round(140000 * 0.3);
-      case 'above_160k': return Math.round(200000 * 0.3);
-      default: return rentNum > 0 ? Math.round(rentNum * 0.3) : 2000;
-    }
-  } else {
-    switch (budgetRange) {
-      case 'below_8m': return 2000;
-      case '8m_15m': return Math.round(11500000 * 0.003);
-      case '15m_20m': return Math.round(17500000 * 0.003);
-      case '20m_50m': return Math.round(35000000 * 0.003);
-      case 'above_50m': return Math.round(50000000 * 0.003);
-      default: return priceNum > 0 ? Math.round(priceNum * 0.003) : 2000;
-    }
-  }
-}
-
-function updateStatusDisplay(statusInput, value) {
-  if (value === null || value === undefined || value === '') {
-    statusInput.value = '待处理';
-    statusInput.style.backgroundColor = '#ffc107';
-    statusInput.style.color = '#856404';
-  } else if (value === 0) {
-    statusInput.value = '已拒绝';
-    statusInput.style.backgroundColor = '#dc3545';
-    statusInput.style.color = 'white';
-  } else {
-    statusInput.value = '已验证';
-    statusInput.style.backgroundColor = '#28a745';
-    statusInput.style.color = 'white';
-  }
-}
-
-function updateValueFromBudget(id) {
-  var budgetSelect = document.getElementById('budget_' + id);
-  var valueInput = document.getElementById('value_' + id);
-  var statusInput = document.getElementById('status_' + id);
-  var txTypeSelect = document.getElementById('tx_type_' + id);
-  var verifiedBySelect = document.getElementById('verified_by_' + id);
-  
-  if (!budgetSelect || !valueInput) return;
-  
-  // Get previous value (stored in data attribute)
-  var previousBudget = budgetSelect.getAttribute('data-original-budget') || '';
-  var currentBudget = budgetSelect.value;
-  
-  var row = budgetSelect.closest('tr');
-  if (!row) return;
-  
-  var cells = row.querySelectorAll('td');
-  var rentValue = cells[5] ? cells[5].innerText : '';
-  var priceValue = cells[6] ? cells[6].innerText : '';
-  var isRent = (txTypeSelect && txTypeSelect.value === 'rent');
-  
-  // Check if this is a new selection (was empty, now has value)
-  var wasEmpty = (previousBudget === '' || previousBudget === null);
-  var isNowSelected = (currentBudget && currentBudget !== '');
-  
-  if (currentBudget && currentBudget !== '') {
-    // Calculate and update value
-    var newValue = calculateValueFromBudget(currentBudget, isRent, rentValue, priceValue);
-    valueInput.value = newValue;
-    valueInput.placeholder = '';
-    valueInput.classList.add('pending-change');
-    updateStatusDisplay(statusInput, newValue);
-    
-    // Auto-select verified_by ONLY when budget was previously empty and now selected
-    if (wasEmpty && isNowSelected) {
-      // Get agent name from the "代理" column (index 3)
-      var agentName = cells[3] ? cells[3].innerText.trim() : '';
-      
-      if (verifiedBySelect && agentName && agentName !== '-' && agentName !== '') {
-        // Find and select the matching agent in the dropdown
-        var optionFound = false;
-        for (var i = 0; i < verifiedBySelect.options.length; i++) {
-          if (verifiedBySelect.options[i].value === agentName) {
-            verifiedBySelect.selectedIndex = i;
-            optionFound = true;
-            break;
-          }
-        }
-        // Optional: if agent not found in dropdown, you could add a temporary option
-        if (!optionFound) {
-          console.log('Agent "' + agentName + '" not found in verified_by dropdown options');
-        }
-      }
-    }
-  } else {
-    // Budget was cleared
-    valueInput.value = '';
-    valueInput.placeholder = '-';
-    valueInput.classList.remove('pending-change');
-    updateStatusDisplay(statusInput, null);
-    // Do NOT auto-clear verified_by when budget is cleared
-  }
-  
-  // Store the current budget as the "original" for next time
-  budgetSelect.setAttribute('data-original-budget', currentBudget);
-}
-
-function onTransactionTypeChange(id) {
-  var txTypeSelect = document.getElementById('tx_type_' + id);
-  var budgetSelect = document.getElementById('budget_' + id);
-  var valueInput = document.getElementById('value_' + id);
-  var statusInput = document.getElementById('status_' + id);
-  
-  if (!txTypeSelect || !budgetSelect) return;
-  
-  var isRent = (txTypeSelect.value === 'rent');
-  var budgetOptions = isRent ? rentBudgetOptions : buyBudgetOptions;
-  var currentBudget = budgetSelect.value;
-  
-  var newHtml = '<option value="">请选择</option>';
-  for (var i = 0; i < budgetOptions.length; i++) {
-    var opt = budgetOptions[i];
-    var selected = (currentBudget === opt.value) ? 'selected' : '';
-    newHtml += '<option value="' + opt.value + '" ' + selected + '>' + opt.label + '</option>';
-  }
-  budgetSelect.innerHTML = newHtml;
-  
-  if (currentBudget && currentBudget !== '') {
-    var row = budgetSelect.closest('tr');
-    if (row) {
-      var cells = row.querySelectorAll('td');
-      var rentValue = cells[5] ? cells[5].innerText : '';
-      var priceValue = cells[6] ? cells[6].innerText : '';
-      var newValue = calculateValueFromBudget(currentBudget, isRent, rentValue, priceValue);
-      if (valueInput) {
-        valueInput.value = newValue;
-        valueInput.classList.add('pending-change');
-        updateStatusDisplay(statusInput, newValue);
-      }
-    }
-  } else {
-    if (valueInput) {
-      valueInput.value = '';
-      valueInput.placeholder = '-';
-      valueInput.classList.remove('pending-change');
-      updateStatusDisplay(statusInput, null);
-    }
-  }
-}
-
-function updateLead(id) {
-  var budgetSelect = document.getElementById('budget_' + id);
-  var valueInput = document.getElementById('value_' + id);
-  var txTypeSelect = document.getElementById('tx_type_' + id);
-  var verifiedBySelect = document.getElementById('verified_by_' + id);
-  
-  // Debug: log what we're getting
-  console.log('Updating lead:', id);
-  console.log('Verified by select element:', verifiedBySelect);
-  if (verifiedBySelect) {
-    console.log('Selected verified_by value:', verifiedBySelect.value);
-  }
-  
-  var budget = budgetSelect ? budgetSelect.value : '';
-  var transactionType = txTypeSelect ? txTypeSelect.value : '';
-  var verifiedBy = verifiedBySelect ? verifiedBySelect.value : '';
-  var value = null;
-  
-  if (budget === '0') {
-    value = 0;
-  } else if (budget && budget !== '') {
-    if (valueInput && valueInput.value !== '' && valueInput.placeholder !== '-') {
-      value = parseInt(valueInput.value);
-    } else {
-      var row = budgetSelect.closest('tr');
-      if (row) {
-        var cells = row.querySelectorAll('td');
-        var rentValue = cells[5] ? cells[5].innerText : '';
-        var priceValue = cells[6] ? cells[6].innerText : '';
-        var isRent = (transactionType === 'rent');
-        value = calculateValueFromBudget(budget, isRent, rentValue, priceValue);
+  document.getElementById('selectAll').addEventListener('change', function(e) {
+    var allCbs = document.querySelectorAll('.lead-cb');
+    for (var k = 0; k < allCbs.length; k++) {
+      allCbs[k].checked = e.target.checked;
+      var cid = parseInt(allCbs[k].getAttribute('data-id'));
+      if (e.target.checked) {
+        selectedLeads.add(cid);
       } else {
-        value = 2000;
+        selectedLeads.delete(cid);
       }
     }
-  }
-  
-  var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : '已验证');
-  var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
-  if (value !== null && value > 0) confirmMsg += '\\n转化价值: ' + value;
-  else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
-  if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
-  
-  if (!confirm(confirmMsg)) return;
-  
-  fetch('/api/leads/batch-update', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      leads: [{ id: id }], 
-      budgets: [budget],
-      values: [value],
-      transactionTypes: [transactionType],
-      verifiedBy: [verifiedBy]  // Make sure this is included
-    })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.success) {
-      loadLeads();
-    } else {
-      alert('操作失败: ' + data.error);
-    }
-  })
-  .catch(function(err) {
-    alert('网络错误: ' + err.message);
+    document.getElementById('selectedCount').innerHTML = '已选择 ' + selectedLeads.size + ' 条';
   });
+  document.getElementById('selectedCount').innerHTML = '已选择 ' + selectedLeads.size + ' 条';
 }
-
 
 function renderPagination(pagination) {
-  var container = document.getElementById('paginationPanel');
-  if (!container) return;
-  
   if (!pagination || pagination.totalPages <= 1) {
-    container.innerHTML = '';
+    document.getElementById('pagination').innerHTML = '';
     return;
   }
-  
-  var html = '';
-  html += '<button onclick="goToPage(1)" ' + (currentPage === 1 ? 'disabled' : '') + '>首页</button>';
+  var html = '<button onclick="goToPage(1)" ' + (currentPage === 1 ? 'disabled' : '') + '>首页</button>';
   html += '<button onclick="goToPage(' + (currentPage - 1) + ')" ' + (currentPage === 1 ? 'disabled' : '') + '>上一页</button>';
-  
-  var startPage = Math.max(1, currentPage - 2);
-  var endPage = Math.min(pagination.totalPages, currentPage + 2);
-  
-  for (var i = startPage; i <= endPage; i++) {
-    var activeStyle = (i === currentPage) ? 'style="background:#667eea;color:white"' : '';
-    html += '<button onclick="goToPage(' + i + ')" ' + activeStyle + '>' + i + '</button>';
+  for (var i = Math.max(1, currentPage - 2); i <= Math.min(pagination.totalPages, currentPage + 2); i++) {
+    html += '<button onclick="goToPage(' + i + ')" ' + (i === currentPage ? 'style="background:#667eea;color:white"' : '') + '>' + i + '</button>';
   }
-  
   html += '<button onclick="goToPage(' + (currentPage + 1) + ')" ' + (currentPage === pagination.totalPages ? 'disabled' : '') + '>下一页</button>';
   html += '<button onclick="goToPage(' + pagination.totalPages + ')" ' + (currentPage === pagination.totalPages ? 'disabled' : '') + '>末页</button>';
-  
-  container.innerHTML = html;
+  document.getElementById('pagination').innerHTML = html;
 }
 
-function goToPage(page) {
+window.goToPage = function(page) {
   currentPage = page;
   loadLeads();
-}
+};
 
-// ============================================
-// Hotline Handlers Functions
-// ============================================
-
-function loadAllHotlineSelections() {
-  fetch("/api/get-agents")
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success && data.agents && data.agents.length > 0) {
-        var telSelect = document.getElementById("hotlineTel");
-        var formSelect = document.getElementById("hotlineForm");
-        var msgSelect = document.getElementById("hotlineMsg");
-        
-        if (!telSelect || !formSelect || !msgSelect) return;
-        
-        var html = '';
-        for (var i = 0; i < data.agents.length; i++) {
-          var agent = data.agents[i];
-          var optionValue = JSON.stringify([agent.agent_name, agent.phone_number]);
-          var displayText = agent.agent_name + ' (' + agent.phone_number + ')';
-          html += '<option value="' + optionValue.replace(/"/g, '&quot;') + '">' + escapeHtml(displayText) + '</option>';
-        }
-        
-        telSelect.innerHTML = html;
-        formSelect.innerHTML = html;
-        msgSelect.innerHTML = html;
-        
-        loadHotlineTel();
-        loadHotlineForm();
-        loadHotlineMsg();
-      }
+window.updateLead = function(id, isVerify) {
+  var value = document.getElementById('val_' + id).value;
+  var action = isVerify ? 'verify' : 'reject';
+  var val = isVerify ? parseInt(value) : 0;
+  if (confirm('确定要将线索 #' + id + ' 标记为' + (isVerify ? '有效' : '垃圾') + '吗？')) {
+    fetch('/admin/api/leads/batch-update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leads: [{ id: id }], action: action, value: val })
     })
-    .catch(function(err) {
-      console.error("Load agents error:", err);
-    });
-}
-
-function loadHotlineTel() {
-  fetch("/api/get-hotline-tel")
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success && data.value) {
-        var select = document.getElementById("hotlineTel");
-        if (select) selectValueFromKV(select, data.value);
-      }
-    })
-    .catch(function(err) {
-      console.error("Load hotline tel error:", err);
-    });
-}
-
-function loadHotlineForm() {
-  fetch("/api/get-hotline-form")
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success && data.value) {
-        var select = document.getElementById("hotlineForm");
-        if (select) selectValueFromKV(select, data.value);
-      }
-    })
-    .catch(function(err) {
-      console.error("Load hotline form error:", err);
-    });
-}
-
-function loadHotlineMsg() {
-  fetch("/api/get-hotline-msg")
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success && data.value) {
-        var select = document.getElementById("hotlineMsg");
-        if (select) selectValueFromKV(select, data.value);
-      }
-    })
-    .catch(function(err) {
-      console.error("Load hotline msg error:", err);
-    });
-}
-
-function selectValueFromKV(select, savedValue) {
-  if (!select || !savedValue) return;
-  
-  for (var i = 0; i < select.options.length; i++) {
-    var optionValue = select.options[i].value;
-    
-    try {
-      var savedParsed = JSON.parse(savedValue);
-      var optionParsed = JSON.parse(optionValue);
-      
-      if (savedParsed[1] === optionParsed[1]) {
-        select.selectedIndex = i;
-        break;
-      }
-    } catch(e) {
-      if (optionValue === savedValue) {
-        select.selectedIndex = i;
-        break;
-      }
-    }
-  }
-}
-
-function updateAllHotlineSelections() {
-  var telSelect = document.getElementById("hotlineTel");
-  var formSelect = document.getElementById("hotlineForm");
-  var msgSelect = document.getElementById("hotlineMsg");
-  var msgSpan = document.getElementById("hotlineMsgSpan");
-  
-  var telValue = telSelect ? telSelect.value : "";
-  var formValue = formSelect ? formSelect.value : "";
-  var msgValue = msgSelect ? msgSelect.value : "";
-  
-  var promises = [];
-  
-  if (telValue) {
-    promises.push(
-      fetch("/api/update-hotline-tel", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: telValue })
-      })
-    );
-  }
-  
-  if (formValue) {
-    promises.push(
-      fetch("/api/update-hotline-form", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: formValue })
-      })
-    );
-  }
-  
-  if (msgValue) {
-    promises.push(
-      fetch("/api/update-hotline-msg", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ value: msgValue })
-      })
-    );
-  }
-  
-  Promise.all(promises)
-    .then(function(responses) {
-      return Promise.all(responses.map(function(r) { return r.json(); }));
-    })
-    .then(function(results) {
-      var allSuccess = results.every(function(r) { return r.success; });
-      if (allSuccess && msgSpan) {
-        msgSpan.style.color = "green";
-        msgSpan.innerHTML = "✓ 已更新所有热线处理人";
-        setTimeout(function() { if(msgSpan) msgSpan.innerHTML = ""; }, 3000);
-      } else if (msgSpan) {
-        msgSpan.style.color = "red";
-        msgSpan.innerHTML = "更新失败";
-      }
-    })
-    .catch(function(err) {
-      if (msgSpan) {
-        msgSpan.style.color = "red";
-        msgSpan.innerHTML = "網絡錯誤";
-      }
-    });
-}
-
-// ============================================
-// Reinstatement Functions
-// ============================================
-
-function showReinstatementPage() {
-  var app = document.getElementById("app");
-  app.innerHTML = "<div class='admin-box'><div style='display:flex;justify-content:space-between;margin-bottom:20px'><h2>Google Ads Reinstatement - 合格线索</h2><button class='btn btn-danger' onclick='hideReinstatementPage()'>返回主页面</button></div><div style='margin-bottom:20px'><button class='btn btn-primary' onclick='loadReinstatementLeads()'>刷新列表</button><button class='btn btn-success' onclick='exportToGoogleSheets()' style='background:#25D366;'>📤 导出选中到 Google Sheets</button> <span id='reinCountSpan' style='margin-left:20px'></span></div><div id='reinStatsPanel' style='margin-bottom:20px'></div><div id='reinTablePanel'>加载中...</div></div>";
-  loadReinstatementLeads();
-}
-
-function hideReinstatementPage() {
-  // Clear the reinstatement data
-  selectedReinIds.clear();
-  reinstatementLeads = [];
-  
-  // Call the main render function to show admin page
-  render();
-}
-function loadReinstatementLeads() {
-  selectedReinIds.clear();
-  
-  var url = "/api/reinstatement-leads?qualified_only=true";
-  fetch(url)
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success) {
-        reinstatementLeads = data.leads || [];
-        reinstatementStats = data.stats || {};
-        renderReinstatementStats();
-        renderReinstatementTable();
+        loadLeads();
+        loadStats();
       } else {
-        document.getElementById("reinTablePanel").innerHTML = "<div style='color:red'>加载失败: " + (data.error || "未知错误") + "</div>";
+        alert('操作失败');
       }
-    })
-    .catch(function(err) {
-      console.error("Fetch error:", err);
-      document.getElementById("reinTablePanel").innerHTML = "<div style='color:red'>网络错误: " + err.message + "</div>";
     });
-}
-
-function renderReinstatementStats() {
-  var c = document.getElementById("reinStatsPanel");
-  if (!c) return;
-  
-  var total = reinstatementStats.total || 0;
-  var qualified = reinstatementStats.qualified || 0;
-  var pending2days = reinstatementStats.pending_2days || 0;
-  
-  var h = "<div style='display:flex;gap:15px;margin-bottom:20px;flex-wrap:wrap'>";
-  h += "<div style='background:#e8f5e9;padding:15px;border-radius:8px;min-width:120px;text-align:center'><div style='font-size:24px;font-weight:bold;color:#4caf50'>" + total + "</div><div style='font-size:12px;color:#666'>总线索</div></div>";
-  h += "<div style='background:#fff3e0;padding:15px;border-radius:8px;min-width:120px;text-align:center'><div style='font-size:24px;font-weight:bold;color:#4caf50'>" + qualified + "</div><div style='font-size:12px;color:#666'>合格线索</div></div>";
-  h += "<div style='background:#fff3e0;padding:15px;border-radius:8px;min-width:120px;text-align:center'><div style='font-size:24px;font-weight:bold;color:#ff9800'>" + pending2days + "</div><div style='font-size:12px;color:#666'>等待1天</div></div>";
-  h += "</div>";
-  c.innerHTML = h;
-}
-
-function renderReinstatementTable() {
-  var c = document.getElementById("reinTablePanel");
-  if (!c) return;
-  
-  if (!reinstatementLeads || reinstatementLeads.length === 0) {
-    c.innerHTML = "<div style='text-align:center;padding:40px'>暂无合格线索</div>";
-    return;
   }
-  
-  var h = "<div class='table-wrapper'><table style='width:100%;border-collapse:collapse;background:white'>";
-  h += "<thead><tr style='background:#f8f9fa'>";
-  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'><input type='checkbox' id='selectAllRein' onchange='toggleSelectAllRein()'></th>";
-  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>客户号</th>"; 
-  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>转化价值</th>";
-  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>点击类型</th>";
-  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>创建日期</th>";
-  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>天数(创建)</th>";
-  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>状态</th>";
-  h += "</tr></thead><tbody>";
-  
-  for (var i = 0; i < reinstatementLeads.length; i++) {
-    var ld = reinstatementLeads[i];
-    var isQualified = true;
-    var rowBg = "#e8f5e9";
-    var isChecked = selectedReinIds.has(ld.id);
-    
-    var daysValue = ld.days_since_creation || 0;
-    var createdDate = ld.created_at || ld.verified_at || "-";
-    var valueNum = (ld.value && ld.value !== "null") ? ld.value : 0;
-    var clickType = ld.click_type || "-";
-    var statusText = "合格";
-    
-    var checkboxHtml = '<input type="checkbox" class="rein-cb" data-id="' + ld.id + '" ' + (isChecked ? "checked" : "") + ' onclick="handleCheckboxClick(this)">';
-    h += "<tr style='background:" + rowBg + "'>";
-    h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td>";
-    h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td>";
-    h += "<td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td>";
-    h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + clickType + "</td>";
-    h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + (createdDate ? createdDate.substring(0,10) : "-") + "</td>";
-    h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + daysValue + " 天</td>";
-    h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + statusText + "</td>";
-    h += "</tr>";
-  }
-  h += "</tbody></table></div>";
-  c.innerHTML = h;
-  updateReinCount();
-}
+};
 
-function handleCheckboxClick(checkbox) {
-  var id = checkbox.getAttribute("data-id");
-  if (checkbox.checked) {
-    selectedReinIds.add(id);
-  } else {
-    selectedReinIds.delete(id);
-  }
-  updateReinCount();
-}
-
-function toggleSelectAllRein() {
-  var sa = document.getElementById("selectAllRein");
-  var cbs = document.querySelectorAll(".rein-cb:not([disabled])");
-  for (var i = 0; i < cbs.length; i++) {
-    cbs[i].checked = sa.checked;
-    var id = cbs[i].getAttribute("data-id");
-    if (sa.checked) {
-      selectedReinIds.add(id);
-    } else {
-      selectedReinIds.delete(id);
-    }
-  }
-  updateReinCount();
-}
-
-function updateReinCount() {
-  var span = document.getElementById("reinCountSpan");
-  if (span) span.innerHTML = "已选择 " + selectedReinIds.size + " 条";
-}
-
-function showSubmissionDetails(selectedLeadsData, callback) {
-  var modal = document.createElement("div");
-  modal.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;justify-content:center;align-items:center";
-  
-  var content = '<div style="background:white;border-radius:12px;width:550px;max-width:90%;max-height:80%;overflow:auto;padding:20px;font-family:-apple-system, BlinkMacSystemFont, sans-serif">';
-  content += '<h3 style="margin-bottom:20px;color:#333;margin-top:0">📋 Google Ads 提交确认</h3>';
-  content += '<div style="margin-bottom:20px;padding:10px;background:#f8f9fa;border-radius:8px">';
-  content += '<strong>客户数量:</strong> ' + selectedLeadsData.length + '<br>';
-  content += '<strong>提交时间:</strong> ' + new Date().toLocaleString() + '<br>';
-  content += '</div>';
-  
-  // Table with inline styles that override global CSS
-  content += '<div style="overflow-x:auto;max-height:350px;overflow-y:auto;margin-bottom:15px">';
-  content += '<table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;min-width:0">';
-content += '<thead>';
-content += '<tr style="background:#0d1117;color:#8b949e">';  // Changed from white to light gray
-content += '<th style="padding:8px;border:1px solid #333;text-align:left;width:40%">客户号</th>';
-content += '<th style="padding:8px;border:1px solid #333;text-align:center;width:20%">价值</th>';
-content += '<th style="padding:8px;border:1px solid #333;text-align:center;width:20%">类型</th>';
-content += '<th style="padding:8px;border:1px solid #333;text-align:center;width:20%">转化操作</th>';
-content += ' </tr>';
-content += '</thead><tbody>';
-  
-  for (var i = 0; i < selectedLeadsData.length; i++) {
-    var lead = selectedLeadsData[i];
-    var bgColor = (i % 2 === 0) ? '#ffffff' : '#f5f5f5';
-    content += '<tr style="background:' + bgColor + '">';
-    content += '<td style="padding:6px;border:1px solid #ddd;font-family:monospace;font-size:11px;word-break:break-all;white-space:normal">' + lead.client_id + '</td>';
-    content += '<td style="padding:6px;border:1px solid #ddd;text-align:center">$' + lead.value + '</td>';
-    content += '<td style="padding:6px;border:1px solid #ddd;text-align:center">' + lead.click_type + '</td>';
-    content += '<td style="padding:6px;border:1px solid #ddd;text-align:center">' + lead.conversion_action + '</td>';
-    content += ' </tr>';
-  }
-  content += '</tbody></table></div>';
-  
-  content += '<div style="margin-top:15px;padding:10px;background:#fff3cd;border-radius:8px;font-size:12px">';
-  content += '⚠️ 注意：提交后无法撤销，转化价值将被更新到 Google Ads';
-  content += '</div>';
-  content += '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px">';
-  content += '<button id="cancelSubmitBtn" style="padding:10px 20px;background:#6c757d;color:white;border:none;border-radius:6px;cursor:pointer">取消</button>';
-  content += '<button id="confirmSubmitBtn" style="padding:10px 20px;background:#28a745;color:white;border:none;border-radius:6px;cursor:pointer">确认提交</button>';
-  content += '</div></div>';
-  
-  modal.innerHTML = content;
-  document.body.appendChild(modal);
-  
-  document.getElementById("confirmSubmitBtn").onclick = function() {
-    modal.remove();
-    callback(true);
-  };
-  
-  document.getElementById("cancelSubmitBtn").onclick = function() {
-    modal.remove();
-    callback(false);
-  };
-  
-  modal.onclick = function(e) {
-    if (e.target === modal) {
-      modal.remove();
-      callback(false);
-    }
-  };
-}
-
-// ============================================
-// Login / Logout / Render
-// ============================================
-
-function login() {
-  var phone = document.getElementById('phone').value;
-  var password = document.getElementById('password').value;
-  var errorDiv = document.getElementById('loginError');
-  fetch('/api/login', {
+window.batchVerify = function() {
+  if (selectedLeads.size === 0) { alert('请先选择线索'); return; }
+  var val = prompt('请输入价值（默认2000）', '2000');
+  if (val === null) return;
+  var leads = [];
+  selectedLeads.forEach(function(id) { leads.push({ id: id }); });
+  fetch('/admin/api/leads/batch-update', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ phone: phone, password: password })
+    body: JSON.stringify({ leads: leads, action: 'verify', value: parseInt(val) || 2000 })
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      token = data.token;
-      localStorage.setItem('admin_token', token);
-      render();
+      selectedLeads.clear();
+      loadLeads();
+      loadStats();
     } else {
-      errorDiv.textContent = data.error || '登录失败';
-      errorDiv.style.display = 'block';
+      alert('操作失败');
     }
-  })
-  .catch(function() {
-    errorDiv.textContent = '网络错误';
-    errorDiv.style.display = 'block';
   });
-}
+};
 
-function logout() {
-  localStorage.removeItem('admin_token');
-  token = null;
-  render();
-}
-
-function loadCombinedConversionStats() {
-  // Read the existing date filter values from the admin page
-  var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
-  var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
-  
-  var url = '/api/combined-conversion-stats';
-  var params = [];
-  
-  if (dateFrom) params.push('date_from=' + dateFrom);
-  if (dateTo) params.push('date_to=' + dateTo);
-  
-  if (params.length > 0) {
-    url += '?' + params.join('&');
-  }
-
-  fetch(url)
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success) {
-        var html = '<div class="combined-stats-card">';
-        html += '<div class="combined-stats-header-row">';
-        html += '<span class="combined-stats-header-label">真实转化率</span>';
-        html += '<span class="combined-stats-header-paid">广告</span>';
-        html += '<span class="combined-stats-header-nonpaid">自然</span>';
-        html += '</div>';
-        
-        for (var i = 0; i < data.stats.length; i++) {
-          var stat = data.stats[i];
-          html += '<div class="combined-stats-row">';
-          html += '<span class="combined-stats-row-label">' + stat.label + '</span>';
-          html += '<span class="combined-stats-row-paid">' + stat.paid_count + ' (' + stat.paid_percent + ')</span>';
-          html += '<span class="combined-stats-row-nonpaid">' + stat.nonpaid_count + ' (' + stat.nonpaid_percent + ')</span>';
-          html += '</div>';
-        }
-        
-        html += '<div class="combined-stats-total">💰 总查询点击: 广告 ' + data.paid_total + ' | 自然 ' + data.nonpaid_total + '</div>';
-        html += '</div>';
-        
-        var combinedCard = document.getElementById('combinedStatsCard');
-        if (combinedCard) {
-          combinedCard.innerHTML = html;
-        }
-      }
-    })
-    .catch(function(err) {
-      console.error('Load combined stats error:', err);
-    });
-}
-
-function render() {
-  var app = document.getElementById('app');
-  if (token) {
-    app.innerHTML = '<div class="admin-box">' +
-'<div class="button-bar">' +
-'<div style="display:flex; gap:10px; align-items:center;">' +
-'<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>' +
-'<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>' +
-'<button class="btn btn-danger" onclick="logout()">退出登录</button>' +
-'</div>' +
-'</div>' +
-'<div class="stats-and-hotline-row">' +
-'<div class="chart-container">' +
-'<div class="chart-header">' +
-'<h4>📈 有效转化趋势 (付费 vs 自然)</h4>' +
-'<div class="chart-group-selector">' +
-'<button class="btn-group-btn active" data-group="day">按日</button>' +
-'<button class="btn-group-btn" data-group="week">按周</button>' +
-'<button class="btn-group-btn" data-group="month">按月</button>' +
-'</div>' +
-'</div>' +
-'<canvas id="conversionChart" style="width:100%; height:180px;"></canvas>' +
-'</div>' +
-'<div id="combinedStatsCard" class="combined-stats-container"></div>' +
-'<div class="hotline-card">' +
-'<div class="hotline-row">' +
-'<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>' +
-'<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>' +
-'<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>' +
-'<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>' +
-'</div>' +
-'</div>' +
-'</div>' +
-      '<div id="filtersPanel"></div>' +
-      '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>' +
-      '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
-      '</div>';
-// Chart group button event listeners
-var groupBtns = document.querySelectorAll('.btn-group-btn');
-for (var i = 0; i < groupBtns.length; i++) {
-  groupBtns[i].addEventListener('click', function(e) {
-    var group = this.getAttribute('data-group');
-    setChartGroup(group);
-  });
-}   
-loadCombinedConversionStats();  
-loadConversionTrend();
-loadFilters();
-loadAgents().then(function() {
-  loadLeads();
-});
-loadAllHotlineSelections();
-  } else {
-    app.innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
-  }
-}
-// ============================================
-// Google Sheet Reinstatement
-// ============================================
-function exportToGoogleSheets() {
-  if (selectedReinIds.size === 0) {
-    alert("请先选择要导出的客户");
-    return;
-  }
-  
-  var selectedLeadsData = [];
-  for (var i = 0; i < reinstatementLeads.length; i++) {
-    var lead = reinstatementLeads[i];
-    if (selectedReinIds.has(lead.id)) {
-      var conversionAction = "";
-      if (lead.click_type === "tel") {
-        conversionAction = "tel";
-      } else if (lead.click_type === "form") {
-        conversionAction = "form";
-      } else {
-        conversionAction = "msg";
-      }
-      
-      selectedLeadsData.push({
-        client_id: lead.client_id,
-        value: lead.value,
-        click_type: lead.click_type,
-        conversion_action: conversionAction,
-        verified_at: lead.verified_at,
-        gclid: lead.gclid || ''
-      });
-    }
-  }
-  
-  if (selectedLeadsData.length === 0) {
-    alert("没有找到合格的线索数据");
-    return;
-  }
-  
-  if (!confirm("确定要将 " + selectedLeadsData.length + " 个客户的线索导出到 Google Sheets 吗？")) return;
-  
-  var btn = event.target;
-  var originalText = btn.innerText;
-  btn.innerText = '导出中...';
-  btn.disabled = true;
-  
-  fetch("/api/export-reinstatement-to-sheets", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ leads: selectedLeadsData })
+window.batchReject = function() {
+  if (selectedLeads.size === 0) { alert('请先选择线索'); return; }
+  var leads = [];
+  selectedLeads.forEach(function(id) { leads.push({ id: id }); });
+  fetch('/admin/api/leads/batch-update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ leads: leads, action: 'reject', value: 0 })
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
-    btn.innerText = originalText;
-    btn.disabled = false;
-    
     if (data.success) {
-      alert(data.message);
-      
-      // ✅ CLEAR SELECTIONS
-      selectedReinIds.clear();
-      
-      // ✅ REFRESH THE PAGE (reload reinstatement list)
-      loadReinstatementLeads();
-      
-      // ✅ UPDATE THE SELECTION COUNT DISPLAY
-      updateReinCount();
+      selectedLeads.clear();
+      loadLeads();
+      loadStats();
     } else {
-      alert("导出失败: " + data.error);
+      alert('操作失败');
     }
-  })
-  .catch(function(err) {
-    btn.innerText = originalText;
-    btn.disabled = false;
-    alert("网络错误: " + err.message);
   });
-}
-// ============================================
+};
+
+window.exportCSV = function() {
+  var url = '/admin/api/export?';
+  if (currentFilters.status) url += 'status=' + currentFilters.status + '&';
+  if (currentFilters.agent) url += 'agent=' + currentFilters.agent + '&';
+  window.open(url, '_blank');
+};
 
 render();
 </script>
