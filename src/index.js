@@ -814,9 +814,11 @@ async function handleAdminGetLeads(request, env) {
         rent, property_price, size, district, property_type,
         landing_page, page_location, page_referrer,
         utm_source, utm_medium, utm_campaign, gclid,
-        traffic_type, traffic_source,
+        traffic_type, traffic_source, campaign_name,
         value, status, verified_by, created_at, verified_at, budget_range, transaction_type
       FROM leads ${whereClause}
+    LEFT JOIN campaign c ON gad_campaignid = c.campaign_id
+      ${whereClause}
       ORDER BY ${sortBy} ${sortOrder}
       LIMIT ? OFFSET ?
     `);
@@ -1025,9 +1027,11 @@ async function handleAdminExport(request, env) {
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
     const stmt = await env.lead_db.prepare(`
       SELECT id, client_id, agent_name, click_type, rent, district, property_type, 
-             utm_source, utm_medium, utm_campaign, gclid, traffic_type, 
+             utm_source, utm_medium, utm_campaign, gclid, traffic_type, campaign_name,
              value, status, verified_by, created_at, verified_at, budget_range, transaction_type 
-      FROM leads ${whereClause} 
+      FROM leads 
+      LEFT JOIN campaign c ON gad_campaignid = c.campaign_id
+      ${whereClause}
       ORDER BY id DESC
     `);
     
@@ -1035,7 +1039,7 @@ async function handleAdminExport(request, env) {
     const leads = result.results;
     
     const headers = ['ID', '客户号', '代理', '点击类型', '租金', '区域', '物业类型', 
-                     'UTM来源', 'UTM媒介', 'UTM活动', 'GCLID', '流量类型', 
+                     'UTM来源', 'UTM媒介', 'Campaign', 'GCLID', '流量类型',
                      '预算', '价值', '状态', '处理人', '创建时间', '处理时间', '交易类型'];
     const csvRows = [headers.join(',')];
     
@@ -1050,7 +1054,7 @@ async function handleAdminExport(request, env) {
         '"' + (lead.property_type || '') + '"',
         '"' + (lead.utm_source || '') + '"',
         '"' + (lead.utm_medium || '') + '"',
-        '"' + (lead.utm_campaign || '') + '"',
+        '"' + (lead.campaign_name || '') + '"',
         '"' + (lead.gclid || '') + '"',
         '"' + (lead.traffic_type || '') + '"',
         '"' + (lead.budget_range || '') + '"',
@@ -1949,7 +1953,7 @@ function renderTable(leads) {
     html += '<option value="buy" ' + (lead.transaction_type === 'buy' ? 'selected' : '') + '>购买</option>';
     html += '</select></td>';
     html += '<td><span>' + (lead.traffic_type || 'direct') + '</span></td>';
-    html += '<td>' + (lead.utm_campaign || '-') + '</td>'; 
+    html += '<td>' + (lead.campaign_name || '-') + '</td>'; 
     html += '<td><input type="text" id="status_' + lead.id + '" value="' + statusText + '" disabled class="status-input" style="background-color:' + statusBg + ';color:' + statusColor + ';"></td>';
 
     // Budget dropdown
