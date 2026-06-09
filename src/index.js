@@ -649,7 +649,7 @@ async function handleUpdateHotlineMsg(request, env) {
 async function handleGetAgents(request, env) {
   try {
     const stmt = await env.lead_db.prepare(`
-      SELECT id, agent_name, phone_number, is_active
+      SELECT id, agent_name, phone_number, dingtalk_id, is_active
       FROM agents
       WHERE is_active = 1
       ORDER BY agent_name
@@ -2357,7 +2357,8 @@ function loadAllHotlineSelections() {
         var html = '';
         for (var i = 0; i < data.agents.length; i++) {
           var agent = data.agents[i];
-          var optionValue = JSON.stringify([agent.agent_name, agent.phone_number]);
+          // 新格式：存储 ["agent_name", "dingtalk_id"]
+          var optionValue = JSON.stringify([agent.agent_name, agent.dingtalk_id]);
           var displayText = agent.agent_name + ' (' + agent.phone_number + ')';
           html += '<option value="' + optionValue.replace(/"/g, '&quot;') + '">' + escapeHtml(displayText) + '</option>';
         }
@@ -2428,6 +2429,7 @@ function selectValueFromKV(select, savedValue) {
       var savedParsed = JSON.parse(savedValue);
       var optionParsed = JSON.parse(optionValue);
       
+      // 比较 dingtalk_id（数组第二个元素）
       if (savedParsed[1] === optionParsed[1]) {
         select.selectedIndex = i;
         break;
