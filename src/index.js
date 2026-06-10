@@ -112,10 +112,10 @@ async function handleExportReinstatementToSheets(request, env) {
     const hours = String(now.getHours()).padStart(2, '0');
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const seconds = String(now.getSeconds()).padStart(2, '0');
-    const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}+08:00`;
+    const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} +08:00`;
     
     const conversionNameMap = {
-      'tel': 'tel',
+      'tel': 'phoneclick',
       'form': 'form',
       'msg': 'msg',
       'whatsapp': 'msg',
@@ -126,13 +126,13 @@ async function handleExportReinstatementToSheets(request, env) {
     // Build rows for Google Sheets
     const rows = [];
     for (const lead of leads) {
-      const conversionName = conversionNameMap[lead.click_type] || 'leasinghub (web) enqProp_form';
+      const conversionName = conversionNameMap[lead.click_type] || 'unknown';
       let adjustmentType = 'RESTATE';
       let adjustedValue = lead.value;
       
       if (lead.value === 0 || lead.value === '0') {
         adjustmentType = 'RETRACT';
-        adjustedValue = 0;
+        adjustedValue = '';
       }
       
       rows.push([
