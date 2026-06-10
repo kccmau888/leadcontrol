@@ -112,7 +112,7 @@ async function handleExportReinstatementToSheets(request, env) {
     const hours = String(now.getHours()).padStart(2, '0');
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const seconds = String(now.getSeconds()).padStart(2, '0');
-    const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} +08:00`;
+    const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} +0800`;
     
     const conversionNameMap = {
       'tel': 'phoneclick',
