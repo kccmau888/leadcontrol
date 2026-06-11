@@ -1240,20 +1240,20 @@ async function handleConversionTrend(env, request) {
     let dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
     
-    // Convert HK date range to UTC range for filtering
-    function hkDateToUTCRange(dateStr, isEnd = false) {
+    // Convert HK date range to UTC for filtering (subtract 8 hours)
+    function hkDateToUTC(dateStr, isEndOfDay = false) {
       if (!dateStr) return null;
-      // Parse YYYY-MM-DD
       const [year, month, day] = dateStr.split('-').map(Number);
-      // Create date in HK timezone
-      let hkDate;
-      if (isEnd) {
-        hkDate = new Date(Date.UTC(year, month-1, day, 23, 59, 59));
+      
+      let utcDate;
+      if (isEndOfDay) {
+        // HK 23:59:59 -> UTC 15:59:59
+        utcDate = new Date(Date.UTC(year, month-1, day, 15, 59, 59));
       } else {
-        hkDate = new Date(Date.UTC(year, month-1, day, 0, 0, 0));
+        // HK 00:00:00 -> UTC 16:00:00 (previous day)
+        utcDate = new Date(Date.UTC(year, month-1, day - 1, 16, 0, 0));
       }
-      // Convert to UTC (subtract 8 hours)
-      const utcDate = new Date(hkDate.getTime() - (8 * 60 * 60 * 1000));
+      
       return utcDate.toISOString().slice(0, 19).replace('T', ' ');
     }
     
@@ -1263,23 +1263,22 @@ async function handleConversionTrend(env, request) {
     if (dateFrom && dateTo) {
       dateCondition = ' AND created_at >= ? AND created_at <= ?';
       params.push(
-        hkDateToUTCRange(dateFrom, false),
-        hkDateToUTCRange(dateTo, true)
+        hkDateToUTC(dateFrom, false),
+        hkDateToUTC(dateTo, true)
       );
     } else if (dateFrom) {
       dateCondition = ' AND created_at >= ?';
-      params.push(hkDateToUTCRange(dateFrom, false));
+      params.push(hkDateToUTC(dateFrom, false));
     } else if (dateTo) {
       dateCondition = ' AND created_at <= ?';
-      params.push(hkDateToUTCRange(dateTo, true));
+      params.push(hkDateToUTC(dateTo, true));
     }
     
-    // Group by HK time - THIS IS THE KEY
+    // Group by HK time - ADD 8 HOURS to convert UTC to HK time
     let dateFormat, orderBy;
     switch (groupBy) {
       case 'week':
-        // Convert to HK time first, then extract week
-        dateFormat = `strftime('%Y', datetime(created_at, '+8 hours')) || '-W' || printf('%02d', strftime('%W', datetime(created_at, '+8 hours')))`;
+        dateFormat = `strftime('%Y', datetime(created_at, '+8 hours')) || '-W' || strftime('%W', datetime(created_at, '+8 hours'))`;
         orderBy = `min(datetime(created_at, '+8 hours'))`;
         break;
       case 'month':
