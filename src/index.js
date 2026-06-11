@@ -1236,43 +1236,50 @@ async function handleGetReinstatementLeads(request, env) {
 async function handleConversionTrend(env, request) {
   try {
     const url = new URL(request.url);
-    const dateFrom = url.searchParams.get('date_from') || '';
-    const dateTo = url.searchParams.get('date_to') || '';
+    let dateFrom = url.searchParams.get('date_from') || '';
+    let dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
     
-    // Helper: Convert HK date string to UTC datetime string
-    function hkDateToUTC(dateStr, isEndOfDay = false) {
-      if (!dateStr) return '';
+    // Convert HK date range to UTC range for filtering
+    function hkDateToUTCRange(dateStr, isEnd = false) {
+      if (!dateStr) return null;
       // Parse YYYY-MM-DD
       const [year, month, day] = dateStr.split('-').map(Number);
-      // Create date in HK timezone (UTC+8)
-      const hkDate = new Date(Date.UTC(year, month-1, day, isEndOfDay ? 23 : 0, isEndOfDay ? 59 : 0, isEndOfDay ? 59 : 0));
-      // Convert to UTC by subtracting 8 hours
+      // Create date in HK timezone
+      let hkDate;
+      if (isEnd) {
+        hkDate = new Date(Date.UTC(year, month-1, day, 23, 59, 59));
+      } else {
+        hkDate = new Date(Date.UTC(year, month-1, day, 0, 0, 0));
+      }
+      // Convert to UTC (subtract 8 hours)
       const utcDate = new Date(hkDate.getTime() - (8 * 60 * 60 * 1000));
-      // Return as YYYY-MM-DD HH:MM:SS
       return utcDate.toISOString().slice(0, 19).replace('T', ' ');
     }
     
-    // Build date filter with proper UTC conversion
     let dateCondition = '';
     let params = [];
     
     if (dateFrom && dateTo) {
-      dateCondition = ' AND datetime(created_at) >= datetime(?) AND datetime(created_at) <= datetime(?)';
-      params.push(hkDateToUTC(dateFrom, false), hkDateToUTC(dateTo, true));
+      dateCondition = ' AND created_at >= ? AND created_at <= ?';
+      params.push(
+        hkDateToUTCRange(dateFrom, false),
+        hkDateToUTCRange(dateTo, true)
+      );
     } else if (dateFrom) {
-      dateCondition = ' AND datetime(created_at) >= datetime(?)';
-      params.push(hkDateToUTC(dateFrom, false));
+      dateCondition = ' AND created_at >= ?';
+      params.push(hkDateToUTCRange(dateFrom, false));
     } else if (dateTo) {
-      dateCondition = ' AND datetime(created_at) <= datetime(?)';
-      params.push(hkDateToUTC(dateTo, true));
+      dateCondition = ' AND created_at <= ?';
+      params.push(hkDateToUTCRange(dateTo, true));
     }
     
-    // Determine SQL grouping using HK time
+    // Group by HK time - THIS IS THE KEY
     let dateFormat, orderBy;
     switch (groupBy) {
       case 'week':
-        dateFormat = `strftime('%Y', datetime(created_at, '+8 hours')) || '-W' || strftime('%W', datetime(created_at, '+8 hours'))`;
+        // Convert to HK time first, then extract week
+        dateFormat = `strftime('%Y', datetime(created_at, '+8 hours')) || '-W' || printf('%02d', strftime('%W', datetime(created_at, '+8 hours')))`;
         orderBy = `min(datetime(created_at, '+8 hours'))`;
         break;
       case 'month':
@@ -1309,10 +1316,46 @@ async function handleConversionTrend(env, request) {
     const stmt = await env.lead_db.prepare(sql);
     const result = await stmt.bind(...params).all();
     
-    // ... rest of your code remains the same ...
+    const periods = [];
+    const paidCounts = [];
+    const organicCounts = [];
+    
+    for (const row of result.results) {
+      let displayPeriod = row.period;
+      
+      if (groupBy === 'week') {
+        const match = row.period.match(/(\d{4})-W(\d+)/);
+        if (match) {
+          displayPeriod = `${match[1]} Week ${match[2]}`;
+        }
+      } else if (groupBy === 'month') {
+        const match = row.period.match(/(\d{4})-(\d{2})/);
+        if (match) {
+          displayPeriod = `${match[1]}-${match[2]}`;
+        }
+      }
+      
+      periods.push(displayPeriod);
+      paidCounts.push(row.paid_count);
+      organicCounts.push(row.organic_count);
+    }
+    
+    return new Response(JSON.stringify({
+      success: true,
+      periods: periods,
+      paid: paidCounts,
+      organic: organicCounts,
+      groupBy: groupBy
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
     
   } catch (error) {
-    // ... error handling ...
+    console.error('Conversion trend error:', error);
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
   }
 }
 
