@@ -1240,29 +1240,38 @@ async function handleConversionTrend(env, request) {
     const dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
     
-    // Build date filter with HK timezone
+    // Helper: Convert HK date string to UTC datetime string
+    function hkDateToUTC(dateStr, isEndOfDay = false) {
+      if (!dateStr) return '';
+      // Parse YYYY-MM-DD
+      const [year, month, day] = dateStr.split('-').map(Number);
+      // Create date in HK timezone (UTC+8)
+      const hkDate = new Date(Date.UTC(year, month-1, day, isEndOfDay ? 23 : 0, isEndOfDay ? 59 : 0, isEndOfDay ? 59 : 0));
+      // Convert to UTC by subtracting 8 hours
+      const utcDate = new Date(hkDate.getTime() - (8 * 60 * 60 * 1000));
+      // Return as YYYY-MM-DD HH:MM:SS
+      return utcDate.toISOString().slice(0, 19).replace('T', ' ');
+    }
+    
+    // Build date filter with proper UTC conversion
     let dateCondition = '';
     let params = [];
     
-    // Convert filter dates to UTC range (since created_at is UTC)
     if (dateFrom && dateTo) {
-      // Filter uses UTC, but for HK date ranges, convert to UTC
       dateCondition = ' AND datetime(created_at) >= datetime(?) AND datetime(created_at) <= datetime(?)';
-      // Convert HK date to UTC start/end
-      params.push(`${dateFrom} 00:00:00+08:00`, `${dateTo} 23:59:59+08:00`);
+      params.push(hkDateToUTC(dateFrom, false), hkDateToUTC(dateTo, true));
     } else if (dateFrom) {
       dateCondition = ' AND datetime(created_at) >= datetime(?)';
-      params.push(`${dateFrom} 00:00:00+08:00`);
+      params.push(hkDateToUTC(dateFrom, false));
     } else if (dateTo) {
       dateCondition = ' AND datetime(created_at) <= datetime(?)';
-      params.push(`${dateTo} 23:59:59+08:00`);
+      params.push(hkDateToUTC(dateTo, true));
     }
     
     // Determine SQL grouping using HK time
     let dateFormat, orderBy;
     switch (groupBy) {
       case 'week':
-        // Group by week in HK time
         dateFormat = `strftime('%Y', datetime(created_at, '+8 hours')) || '-W' || strftime('%W', datetime(created_at, '+8 hours'))`;
         orderBy = `min(datetime(created_at, '+8 hours'))`;
         break;
@@ -1277,13 +1286,15 @@ async function handleConversionTrend(env, request) {
     
     const sql = `
       WITH valid_conversions AS (
-      SELECT 
-        created_at,
-        gclid,
-        ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
-      FROM leads
-      WHERE value > 0
-        ${dateCondition}
+        SELECT 
+          created_at,
+          gclid,
+          client_id,
+          verified_at,
+          ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
+        FROM leads
+        WHERE value > 0
+          ${dateCondition}
       )
       SELECT 
         ${dateFormat} as period,
@@ -1298,44 +1309,10 @@ async function handleConversionTrend(env, request) {
     const stmt = await env.lead_db.prepare(sql);
     const result = await stmt.bind(...params).all();
     
-    const periods = [];
-    const paidCounts = [];
-    const organicCounts = [];
-    
-    for (const row of result.results) {
-      let displayPeriod = row.period;
-      if (groupBy === 'week') {
-        const match = row.period.match(/(\d{4})-W(\d+)/);
-        if (match) {
-          displayPeriod = `${match[1]} 第${match[2]}周`;
-        }
-      } else if (groupBy === 'month') {
-        const match = row.period.match(/(\d{4})-(\d{2})/);
-        if (match) {
-          displayPeriod = `${match[1]}年${parseInt(match[2])}月`;
-        }
-      }
-      periods.push(displayPeriod);
-      paidCounts.push(row.paid_count);
-      organicCounts.push(row.organic_count);
-    }
-    
-    return new Response(JSON.stringify({
-      success: true,
-      periods: periods,
-      paid: paidCounts,
-      organic: organicCounts,
-      groupBy: groupBy
-    }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
+    // ... rest of your code remains the same ...
     
   } catch (error) {
-    console.error('Conversion trend error:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
+    // ... error handling ...
   }
 }
 
