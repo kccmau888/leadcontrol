@@ -1164,7 +1164,7 @@ async function handleGetReinstatementLeads(request, env) {
     const qualifiedOnly = url.searchParams.get("qualified_only") === "true";
     
     let sql = `
-      WITH ranked_leads AS (
+ WITH ranked_leads AS (
         SELECT client_id, 
           value AS ConvValue, 
           created_at AS latest_created_at,
