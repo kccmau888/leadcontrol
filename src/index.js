@@ -1241,6 +1241,110 @@ async function handleGetReinstatementLeads(request, env) {
 async function handleConversionTrend(env, request) {
   try {
     const url = new URL(request.url);
+    let dateFrom = url.searchParams.get('date_from') || ''; // Expects 'YYYY-MM-DD'
+    let dateTo = url.searchParams.get('date_to') || '';     // Expects 'YYYY-MM-DD'
+    const groupBy = url.searchParams.get('group_by') || 'day';
+    
+    let dateCondition = '';
+    let params = [];
+    
+    // Pass raw 'YYYY-MM-DD' to SQL. SQLite will handle the local +8 hours conversion safely.
+    if (dateFrom && dateTo) {
+      dateCondition = "WHERE hk_created_at >= ? AND hk_created_at <= ? * 1 || ' 23:59:59'"; 
+      // A cleaner SQLite approach is matching string boundaries:
+      dateCondition = "WHERE date(hk_created_at) >= ? AND date(hk_created_at) <= ?";
+      params.push(dateFrom, dateTo);
+    } else if (dateFrom) {
+      dateCondition = "WHERE date(hk_created_at) >= ?";
+      params.push(dateFrom);
+    } else if (dateTo) {
+      dateCondition = "WHERE date(hk_created_at) <= ?";
+      params.push(dateTo);
+    }
+    
+    let dateFormat;
+    switch (groupBy) {
+      case 'week':
+        dateFormat = `strftime('%Y-W%W', hk_created_at)`;
+        break;
+      case 'month':
+        dateFormat = `strftime('%Y-%m', hk_created_at)`;
+        break;
+      default: // day
+        dateFormat = `date(hk_created_at)`;
+    }
+    
+    // 1. Convert UTC to HK time zone first for uniform evaluation
+    // 2. Perform deduplication via ROW_NUMBER
+    // 3. Filter by date and group by period smoothly
+    const sql = `
+      WITH converted_leads AS (
+        SELECT 
+          *,
+          datetime(created_at, '+8 hours') as hk_created_at,
+          ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
+        FROM leads
+        WHERE value > 0
+      ),
+      filtered_conversions AS (
+        SELECT * 
+        FROM converted_leads
+        ${dateCondition}
+      )
+      SELECT 
+        ${dateFormat} as period,
+        SUM(CASE WHEN (gclid IS NOT NULL AND gclid != '') THEN 1 ELSE 0 END) as paid_count,
+        SUM(CASE WHEN (gclid IS NULL OR gclid = '') THEN 1 ELSE 0 END) as organic_count
+      FROM filtered_conversions
+      WHERE rn = 1
+      GROUP BY period
+      ORDER BY period ASC
+    `;
+    
+    const stmt = await env.lead_db.prepare(sql);
+    const result = await stmt.bind(...params).all();
+    
+    const periods = [];
+    const paidCounts = [];
+    const organicCounts = [];
+    
+    for (const row of result.results) {
+      let displayPeriod = row.period;
+      
+      if (groupBy === 'week') {
+        const match = row.period.match(/(\d{4})-W(\d+)/);
+        if (match) {
+          displayPeriod = `${match[1]} Week ${match[2]}`;
+        }
+      }
+      
+      periods.push(displayPeriod);
+      paidCounts.push(row.paid_count || 0);
+      organicCounts.push(row.organic_count || 0);
+    }
+    
+    return new Response(JSON.stringify({
+      success: true,
+      periods: periods,
+      paid: paidCounts,
+      organic: organicCounts,
+      groupBy: groupBy
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+  } catch (error) {
+    console.error('Conversion trend error:', error);
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function handleConversionTrend_old(env, request) {
+  try {
+    const url = new URL(request.url);
     let dateFrom = url.searchParams.get('date_from') || '';
     let dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
