@@ -1184,7 +1184,7 @@ async function handleGetReinstatementLeads(request, env) {
       )
       SELECT 
           L.client_id,
-          MAX(CASE WHEN L.rn_asc = 1 THEN L.click_type END) as clicktype,
+          MAX(CASE WHEN L.rn_asc = 1 THEN L.click_type END) as click_type,
           MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END) as latest_created_at,
           CAST(julianday('now') - julianday(MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END)) AS INTEGER) as days_since_creation,
           MAX(CASE WHEN L.rn_val = 1 THEN L.value END) as ConvValue
