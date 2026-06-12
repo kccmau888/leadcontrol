@@ -1164,27 +1164,32 @@ async function handleGetReinstatementLeads(request, env) {
     const qualifiedOnly = url.searchParams.get("qualified_only") === "true";
     
     let sql = `
- WITH ranked_leads AS (
-        SELECT client_id, 
-          value AS ConvValue, 
-          created_at AS latest_created_at,
-          verified_at AS latest_verified_at,
-          click_type,
-          ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at DESC) AS rn
-        FROM leads
-        WHERE gclid IS NOT NULL 
-          AND gclid != ""
-          AND client_id <> "unknown" 
-          AND client_id IS NOT NULL 
-          AND value IS NOT NULL
-          AND (reinstatement_submitted_at IS NULL OR datetime(reinstatement_submitted_at) < datetime("now", "-90 days"))
-          AND datetime(created_at) BETWEEN datetime("now", "-90 days") AND datetime("now", "-1 days")
+      WITH RankedLeads AS (
+          SELECT 
+              client_id,
+              gclid,
+              click_type,
+              created_at,
+              value,
+              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at ASC) as rn_asc,
+              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY value DESC) as rn_val
+          FROM leads
+          WHERE gclid IS NOT NULL 
+            AND gclid <> ''
+            AND client_id IS NOT NULL 
+            AND client_id <> 'unknown' 
+            AND value IS NOT NULL
+            AND (reinstatement_submitted_at IS NULL OR datetime(reinstatement_submitted_at) < datetime('now', '-90 days'))
+            AND datetime(created_at) BETWEEN datetime('now', '-90 days') AND datetime('now', '-1 days')
       )
-      SELECT client_id, ConvValue, latest_created_at, latest_verified_at, click_type,
-        CAST((julianday("now") - julianday(latest_created_at)) AS INTEGER) as days_since_creation
-      FROM ranked_leads
-      WHERE rn = 1 
-        AND ConvValue IS NOT NULL
+      SELECT 
+          L.client_id,
+          MAX(CASE WHEN L.rn_asc = 1 THEN L.click_type END) as clicktype,
+          MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END) as latest_created_at,
+          CAST(julianday('now') - julianday(MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END)) AS INTEGER) as days_since_creation,
+          MAX(CASE WHEN L.rn_val = 1 THEN L.value END) as ConvValue
+      FROM RankedLeads L
+      GROUP BY L.client_id;
     `;
     
     const stmt = await env.lead_db.prepare(sql);
