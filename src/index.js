@@ -817,7 +817,7 @@ async function handleAdminGetLeads(request, env) {
         traffic_type, traffic_source, campaign_name,
         value, status, verified_by, created_at, verified_at, budget_range, transaction_type
       FROM leads
-    LEFT JOIN campaign c ON gad_campaignid = c.campaign_id
+    LEFT JOIN campaign c ON utm_id = c.campaign_id
       ${whereClause}
       ORDER BY ${sortBy} ${sortOrder}
       LIMIT ? OFFSET ?
@@ -1030,7 +1030,7 @@ async function handleAdminExport(request, env) {
              utm_source, utm_medium, utm_campaign, gclid, traffic_type, campaign_name,
              value, status, verified_by, created_at, verified_at, budget_range, transaction_type 
       FROM leads 
-      LEFT JOIN campaign c ON gad_campaignid = c.campaign_id
+      LEFT JOIN campaign c ON utm_id = c.campaign_id
       ${whereClause}
       ORDER BY id DESC
     `);
