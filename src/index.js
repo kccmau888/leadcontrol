@@ -1193,7 +1193,41 @@ async function handleGetReinstatementLeads(request, env) {
       FROM RankedLeads L
       GROUP BY L.client_id;
     `;
-    
+
+      let sql = `
+      WITH RankedLeads AS (
+          SELECT 
+              client_id,
+              gclid,
+              click_type,
+              created_at,
+              value,
+              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at ASC) as rn_asc,
+              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY value DESC) as rn_val,
+              
+              -- NEW WINDOW FUNCTION: Flags '1' for ALL rows of a client if ANY row is > 3 mins
+              MAX(CASE WHEN time_to_conversion > '00:03:00' THEN 1 ELSE 0 END) 
+                  OVER (PARTITION BY client_id) as client_has_long_record
+          FROM leads
+          WHERE gclid IS NOT NULL 
+            AND gclid <> ''
+            AND client_id IS NOT NULL 
+            AND client_id <> 'unknown' 
+            AND value IS NOT NULL
+            AND (reinstatement_submitted_at IS NULL OR datetime(reinstatement_submitted_at) < datetime('now', '-90 days'))
+            AND datetime(created_at) BETWEEN datetime('now', '-90 days') AND datetime('now', '-1 days')
+      )
+      SELECT 
+          L.client_id,
+          MAX(CASE WHEN L.rn_asc = 1 THEN L.click_type END) as click_type,
+          MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END) as latest_created_at,
+          CAST(julianday('now') - julianday(MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END)) AS INTEGER) as days_since_creation,
+          MAX(CASE WHEN L.rn_val = 1 THEN L.value END) as ConvValue
+      FROM RankedLeads L
+      WHERE NOT (L.value = 0 AND L.client_has_long_record = 1)
+      GROUP BY L.client_id;
+      `;
+
     const stmt = await env.lead_db.prepare(sql);
     const result = await stmt.all();
     
