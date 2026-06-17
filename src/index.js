@@ -2011,8 +2011,8 @@ function renderTable(leads) {
   
   var html = '<div class="table-wrapper"><table><thead><tr>';
   html += '<th>ID</th><th>客户号</th><th>询问途径</th><th>代理</th><th>区域</th><th>租金</th><th>售价</th>';
-  html += '<th>交易类型</th><th>来源</th><th>Campaign</th><th>状态</th><th>预算</th><th>转化价值</br>Time to Conversion</th>';
-  html += '<th>询问时间</th><th>验证人/跟进人</th><th>验证时间</th><th>操作</th>';
+  html += '<th>交易类型</th><th>来源</th><th>Campaign</th><th>状态</th><th>预算</th><th>转化价值</th>';
+  html += '<th>询问时间</br>(转化时间)</th><th>验证人/跟进人</th><th>验证时间</th><th>操作</th>';
   html += '</thead><tbody>';
   
   for (var i = 0; i < leads.length; i++) {
@@ -2071,8 +2071,8 @@ function renderTable(leads) {
     
     var rowClass = frozen ? 'frozen-row' : '';
     html += '<tr class="' + rowClass + '">';
-    html += '<td>' + lead.id + '</br>' + lead.user_ip + '</td>';
-    html += '<td class="wrap-text">' + clientDisplay + '</td>';  
+    html += '<td>' + lead.id + '</td>';
+    html += '<td class="wrap-text">' + clientDisplay + '</br>(' + lead.user_ip + ')</td>';  
     html += '<td>' + lead.click_type + '</td>';    
     html += '<td>' + (lead.agent_name || '-') + '</td>';
     html += '<td>' + (lead.district || '-') + '</td>';
@@ -2099,7 +2099,7 @@ function renderTable(leads) {
 
 
     html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
-    html += '<td>' + new Date(lead.created_at).toLocaleString() + '</br>' + lead.time_to_conversion + '</td>';
+    html += '<td>' + new Date(lead.created_at).toLocaleString() + '</br>(' + lead.time_to_conversion + ')</td>';
 
 
 // 验证人 dropdown
