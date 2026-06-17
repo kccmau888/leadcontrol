@@ -1194,7 +1194,7 @@ async function handleGetReinstatementLeads(request, env) {
       GROUP BY L.client_id;
     `;
 
-      let sql = `
+      sql = `
       WITH RankedLeads AS (
           SELECT 
               client_id,
