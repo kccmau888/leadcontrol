@@ -810,12 +810,12 @@ async function handleAdminGetLeads(request, env) {
     const total = countResult.total;
     
     const dataStmt = await env.lead_db.prepare(`
-      SELECT id, client_id, agent_name, agent_phone, click_type,
+      SELECT id, client_id, user_ip, agent_name, agent_phone, click_type,
         rent, property_price, size, district, property_type,
         landing_page, page_location, page_referrer,
         utm_source, utm_medium, utm_campaign, gclid,
         traffic_type, traffic_source, campaign_name,
-        value, status, verified_by, created_at, verified_at, budget_range, transaction_type
+        value, status, verified_by, created_at, time_to_conversion, verified_at, budget_range, transaction_type
       FROM leads
     LEFT JOIN campaign c ON utm_id = c.campaign_id
       ${whereClause}
@@ -1026,9 +1026,9 @@ async function handleAdminExport(request, env) {
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
     const stmt = await env.lead_db.prepare(`
-      SELECT id, client_id, agent_name, click_type, rent, district, property_type, 
+      SELECT id, client_id, user_id, agent_name, click_type, rent, district, property_type, 
              utm_source, utm_medium, utm_campaign, gclid, traffic_type, campaign_name,
-             value, status, verified_by, created_at, verified_at, budget_range, transaction_type 
+             value, status, verified_by, created_at, time_to_conversion, verified_at, budget_range, transaction_type 
       FROM leads 
       LEFT JOIN campaign c ON utm_id = c.campaign_id
       ${whereClause}
@@ -1047,6 +1047,7 @@ async function handleAdminExport(request, env) {
       const row = [
         lead.id,
         '"' + (lead.client_id || '') + '"',
+        '"' + (lead.user_ip || '') + '"',        
         '"' + (lead.agent_name || '') + '"',
         '"' + (lead.click_type || '') + '"',
         '"' + (lead.rent || '') + '"',
@@ -1062,6 +1063,7 @@ async function handleAdminExport(request, env) {
         lead.status || '',
         '"' + (lead.verified_by || '') + '"',
         lead.created_at || '',
+        lead.time_to_conversion || '',
         lead.verified_at || '',
         '"' + (lead.transaction_type || '') + '"'
       ];
@@ -2009,7 +2011,7 @@ function renderTable(leads) {
   
   var html = '<div class="table-wrapper"><table><thead><tr>';
   html += '<th>ID</th><th>客户号</th><th>询问途径</th><th>代理</th><th>区域</th><th>租金</th><th>售价</th>';
-  html += '<th>交易类型</th><th>来源</th><th>Campaign</th><th>状态</th><th>预算</th><th>转化价值</th>';
+  html += '<th>交易类型</th><th>来源</th><th>Campaign</th><th>状态</th><th>预算</th><th>转化价值</br>Time to Conversion</th>';
   html += '<th>询问时间</th><th>验证人/跟进人</th><th>验证时间</th><th>操作</th>';
   html += '</thead><tbody>';
   
@@ -2069,7 +2071,7 @@ function renderTable(leads) {
     
     var rowClass = frozen ? 'frozen-row' : '';
     html += '<tr class="' + rowClass + '">';
-    html += '<td>' + lead.id + '</td>';
+    html += '<td>' + lead.id + '</br>' + lead.user_ip + '</td>';
     html += '<td class="wrap-text">' + clientDisplay + '</td>';  
     html += '<td>' + lead.click_type + '</td>';    
     html += '<td>' + (lead.agent_name || '-') + '</td>';
@@ -2097,7 +2099,7 @@ function renderTable(leads) {
 
 
     html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
-    html += '<td>' + new Date(lead.created_at).toLocaleString() + '</td>';
+    html += '<td>' + new Date(lead.created_at).toLocaleString() + '</br>' + lead.time_to_conversion + '</td>';
 
 
 // 验证人 dropdown
