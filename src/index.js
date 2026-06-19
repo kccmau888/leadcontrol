@@ -2036,6 +2036,10 @@ function loadLeads() {
     });
 }
 
+function cutUrlBeforeQuestionMark(url) {
+    return url.split('?')[0];
+}
+
 function renderTable(leads) {
   var container = document.getElementById('tablePanel');
   if (!leads || leads.length === 0) {
@@ -2096,7 +2100,8 @@ function renderTable(leads) {
       statusBg = '#28a745';
       statusColor = 'white';
     }
-    
+
+    var pageLocation = cutUrlBeforeQuestionMark(lead.page_location || '');    
     var leadCount = clientCounts[lead.client_id] || 0;
     var hasMultipleLeads = leadCount > 1;
     var clientDisplay = (hasMultipleLeads && lead.client_id && lead.client_id !== '-') 
@@ -2145,15 +2150,12 @@ function renderTable(leads) {
     html += '<td><button class="btn btn-primary" onclick="updateLead(' + lead.id + ')" style="padding:4px 8px;font-size:12px" ' + (frozen ? 'disabled' : '') + '>保存</button></td>';
     html += '</tr>';
 
-
-
-
     html += '<tr class="' + rowClass + '">';
     html += '<td></td>';
     html += '<td>(' + lead.user_ip + ')</td>';  
     html += '<td></td>';    
     html += '<td></td>';
-    html += '<td colspan="6">' + lead.page_location + '</td>';
+    html += '<td colspan="6">' + pageLocation + '</td>';
     html += '<td></td>';
     html += '<td></td>';
     html += '<td></td>';
