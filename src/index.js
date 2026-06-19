@@ -2129,29 +2129,37 @@ function renderTable(leads) {
       html += '<option value="' + opt.value + '" ' + selected + '>' + opt.label + '</option>';
     }
     html += '</select></td>';
-
-
-
     html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
     html += '<td>' + new Date(lead.created_at).toLocaleString() + '</br>(' + lead.time_to_conversion + ')</td>';
-
-
-// 验证人 dropdown
-html += '<td><select id="verified_by_' + lead.id + '" class="verified-by-select" data-lead-id="' + lead.id + '" ' + (frozen ? 'disabled' : '') + '>';
-html += '<option value="">-</option>';
-for (var a = 0; a < agentsList.length; a++) {
-  var agent = agentsList[a];
-  var agentName = agent.agent_name;
-  var selected = (verifiedBy === agentName || (lead.verified_by === agentName)) ? 'selected' : '';
-  html += '<option value="' + escapeHtml(agentName) + '" ' + selected + '>' + escapeHtml(agentName) + '</option>';
-}
-html += '</select></td>';
-
-
-
-
+    // 验证人 dropdown
+    html += '<td><select id="verified_by_' + lead.id + '" class="verified-by-select" data-lead-id="' + lead.id + '" ' + (frozen ? 'disabled' : '') + '>';
+    html += '<option value="">-</option>';
+    for (var a = 0; a < agentsList.length; a++) {
+      var agent = agentsList[a];
+      var agentName = agent.agent_name;
+      var selected = (verifiedBy === agentName || (lead.verified_by === agentName)) ? 'selected' : '';
+      html += '<option value="' + escapeHtml(agentName) + '" ' + selected + '>' + escapeHtml(agentName) + '</option>';
+    }
+    html += '</select></td>';
     html += '<td>' + verifiedAt + '<td>';
     html += '<td><button class="btn btn-primary" onclick="updateLead(' + lead.id + ')" style="padding:4px 8px;font-size:12px" ' + (frozen ? 'disabled' : '') + '>保存</button></td>';
+    html += '</tr>';
+
+
+
+
+    html += '<tr class="' + rowClass + '">';
+    html += '<td></td>';
+    html += '<td>(' + lead.user_ip + ')</td>';  
+    html += '<td></td>';    
+    html += '<td></td>';
+    html += '<td colspan='6'>' + lead.page_location + '</td>';
+    html += '<td></td>';
+    html += '<td></td>';
+    html += '<td></td>';
+    html += '<td></td>';
+    html += '<td><td>';
+    html += '<td></td>';
     html += '</tr>';
   }
   html += '</tbody></table></div>';
