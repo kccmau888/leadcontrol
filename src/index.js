@@ -1194,7 +1194,7 @@ async function handleGetReinstatementLeads(request, env) {
       GROUP BY L.client_id;
     `;
 
-      sql = `
+      let sql_backup = `
       WITH RankedLeads AS (
           SELECT 
               client_id,
@@ -1205,8 +1205,8 @@ async function handleGetReinstatementLeads(request, env) {
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at ASC) as rn_asc,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY value DESC) as rn_val,
               
-              -- NEW WINDOW FUNCTION: Flags '1' for ALL rows of a client if ANY row is > 3 mins
-              MAX(CASE WHEN time_to_conversion > '00:03:00' THEN 1 ELSE 0 END) 
+              -- NEW WINDOW FUNCTION: Flags '1' for ALL rows of a client if ANY row is > 1 mins
+              MAX(CASE WHEN time_to_conversion > '00:01:00' THEN 1 ELSE 0 END) 
                   OVER (PARTITION BY client_id) as client_has_long_record
           FROM leads
           WHERE gclid IS NOT NULL 
