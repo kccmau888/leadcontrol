@@ -3119,6 +3119,63 @@ function loadStaffData() {
     });
 }
 
+function renderStaffTable(agents) {
+  var container = document.getElementById('staffTableContainer');
+  if (!container) return;
+  
+  if (!agents || agents.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:30px;color:#999;">暂无员工</div>';
+    return;
+  }
+  
+  var html = '<div class="table-wrapper" style="max-height: 400px; overflow-y: auto;">';
+  html += '<table style="width:100%; border-collapse:collapse; background:white; min-width:600px;">';
+  html += '<thead>';
+  html += '<tr style="background:#f8f9fa; position:sticky; top:0; z-index:10;">';
+  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">ID</th>';
+  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">姓名</th>';
+  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">电话</th>';
+  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">钉钉ID</th>';
+  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">状态</th>';
+  html += '<th style="padding:10px 12px; text-align:center; border-bottom:2px solid #eee;">操作</th>';
+  html += '</tr>';
+  html += '</thead>';
+  html += '<tbody>';
+  
+  for (var i = 0; i < agents.length; i++) {
+    var agent = agents[i];
+    var statusText = agent.is_active == 1 ? '✅ 启用' : '⛔ 停用';
+    var statusColor = agent.is_active == 1 ? '#28a745' : '#dc3545';
+    
+    html += '<tr style="border-bottom:1px solid #eee;">';
+    html += '<td style="padding:8px 12px;">' + agent.id + '</td>';
+    html += '<td style="padding:8px 12px; font-weight:500;">' + escapeHtml(agent.agent_name) + '</td>';
+    html += '<td style="padding:8px 12px;">' + escapeHtml(agent.phone_number || '-') + '</td>';
+    html += '<td style="padding:8px 12px;">' + escapeHtml(agent.dingtalk_id || '-') + '</td>';
+    html += '<td style="padding:8px 12px;">';
+    html += '<span style="background:' + statusColor + '; color:white; padding:2px 10px; border-radius:20px; font-size:12px;">';
+    html += statusText;
+    html += '</span>';
+    html += '</td>';
+    html += '<td style="padding:8px 12px; text-align:center;">';
+    html += '<button class="btn btn-primary btn-small" onclick="editStaff(' + agent.id + ')" style="margin-right:5px;">编辑</button>';
+    html += '<button class="btn ' + (agent.is_active == 1 ? 'btn-danger' : 'btn-success') + ' btn-small" onclick="toggleStaffStatus(' + agent.id + ', ' + agent.is_active + ')">';
+    html += agent.is_active == 1 ? '停用' : '启用';
+    html += '</button>';
+    html += '</td>';
+    html += '</tr>';
+  }
+  
+  html += '</tbody>';
+  html += '</table>';
+  html += '</div>';
+  
+  container.innerHTML = html;
+}
+
+function showAddStaffForm() {
+  showStaffForm(null);
+}
 
 
 
