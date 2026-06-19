@@ -1991,6 +1991,7 @@ function loadFilters() {
         html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
         html += '<button class="btn btn-primary" onclick="applyFilters()">搜索</button>';
         html += '<button onclick="resetFilters()">重置</button>';
+        html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
         html += '</div>';
         document.getElementById('filtersPanel').innerHTML = html;
       }
@@ -3047,7 +3048,7 @@ function render() {
     app.innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
   }
 }
-  
+
 // ============================================
 // Google Sheet Reinstatement
 // ============================================
