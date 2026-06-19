@@ -60,6 +60,18 @@ export default {
     if (path === '/api/get-agents' && request.method === 'GET') {
       return handleGetAgents(request, env);
     }
+    if (path === '/api/add-agent' && request.method === 'POST') {
+      return handleAddAgent(request, env);
+    }
+    if (path === '/api/update-agent' && request.method === 'PUT') {
+      return handleUpdateAgent(request, env);
+    }
+    if (path === '/api/toggle-agent-status' && request.method === 'POST') {
+      return handleToggleAgentStatus(request, env);
+    }
+
+
+
 if (path === '/api/conversion-trend' && request.method === 'GET') {
   return handleConversionTrend(env, request);
 }
@@ -645,15 +657,23 @@ async function handleUpdateHotlineMsg(request, env) {
 // ============================================
 // Agent Management Functions
 // ============================================
-
 async function handleGetAgents(request, env) {
   try {
-    const stmt = await env.lead_db.prepare(`
+    const url = new URL(request.url);
+    const all = url.searchParams.get('all') === 'true';
+    
+    let sql = `
       SELECT id, agent_name, phone_number, dingtalk_id, is_active
       FROM agents
-      WHERE is_active = 1
-      ORDER BY agent_name
-    `);
+    `;
+    
+    if (!all) {
+      sql += ` WHERE is_active = 1`;
+    }
+    
+    sql += ` ORDER BY agent_name`;
+    
+    const stmt = await env.lead_db.prepare(sql);
     const result = await stmt.all();
     
     return new Response(JSON.stringify({
@@ -666,6 +686,120 @@ async function handleGetAgents(request, env) {
     return new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 500,
       headers: { "Content-Type": "application/json" }
+    });
+  }
+}
+
+// Add these new handler functions for staff management
+async function handleAddAgent(request, env) {
+  try {
+    const { agent_name, phone_number, dingtalk_id } = await request.json();
+    
+    if (!agent_name || !phone_number) {
+      return new Response(JSON.stringify({ success: false, error: '姓名和电话为必填项' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const stmt = await env.lead_db.prepare(`
+      INSERT INTO agents (agent_name, phone_number, dingtalk_id, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))
+    `);
+    
+    const result = await stmt.bind(agent_name, phone_number, dingtalk_id || null).run();
+    
+    return new Response(JSON.stringify({
+      success: true,
+      id: result.meta.last_row_id,
+      message: '员工添加成功'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function handleUpdateAgent(request, env) {
+  try {
+    const { id, agent_name, phone_number, dingtalk_id } = await request.json();
+    
+    if (!id || !agent_name || !phone_number) {
+      return new Response(JSON.stringify({ success: false, error: 'ID、姓名和电话为必填项' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const stmt = await env.lead_db.prepare(`
+      UPDATE agents 
+      SET agent_name = ?, phone_number = ?, dingtalk_id = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `);
+    
+    const result = await stmt.bind(agent_name, phone_number, dingtalk_id || null, id).run();
+    
+    if (result.meta.rows_written === 0) {
+      return new Response(JSON.stringify({ success: false, error: '未找到该员工' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: '员工更新成功'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function handleToggleAgentStatus(request, env) {
+  try {
+    const { id, is_active } = await request.json();
+    
+    if (!id) {
+      return new Response(JSON.stringify({ success: false, error: '缺少ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const stmt = await env.lead_db.prepare(`
+      UPDATE agents 
+      SET is_active = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `);
+    
+    const result = await stmt.bind(is_active, id).run();
+    
+    if (result.meta.rows_written === 0) {
+      return new Response(JSON.stringify({ success: false, error: '未找到该员工' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: '状态更新成功'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
     });
   }
 }
@@ -2057,6 +2191,269 @@ function loadLeads() {
 
 function cutUrlBeforeQuestionMark(url) {
     return url.split('?')[0];
+}
+
+function showStaffManagement() {
+  // Create modal for staff management
+  var modal = document.createElement('div');
+  modal.id = 'staffModal';
+  modal.className = 'modal';
+  modal.style.display = 'block';
+  
+  var content = `
+    <div class="modal-content" style="max-width: 700px; width: 90%;">
+      <div class="modal-header">
+        <h3>👥 员工管理</h3>
+        <span class="modal-close" onclick="closeStaffModal()">&times;</span>
+      </div>
+      <div id="staffModalBody">
+        <div style="margin-bottom: 15px;">
+          <button class="btn btn-primary" onclick="showAddStaffForm()">+ 添加员工</button>
+          <span id="staffMsg" style="margin-left: 15px; font-size: 14px;"></span>
+        </div>
+        <div id="staffTableContainer">
+          <div style="text-align:center;padding:20px;">加载中...</div>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  modal.innerHTML = content;
+  document.body.appendChild(modal);
+  
+  // Load staff data
+  loadStaffData();
+}
+
+function closeStaffModal() {
+  var modal = document.getElementById('staffModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+function loadStaffData() {
+  fetch("/api/get-agents?all=true")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        renderStaffTable(data.agents || []);
+      } else {
+        document.getElementById('staffTableContainer').innerHTML = 
+          '<div style="color:red">加载失败: ' + (data.error || '未知错误') + '</div>';
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('staffTableContainer').innerHTML = 
+        '<div style="color:red">网络错误: ' + err.message + '</div>';
+    });
+}
+
+function renderStaffTable(agents) {
+  var container = document.getElementById('staffTableContainer');
+  if (!container) return;
+  
+  if (!agents || agents.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:30px;color:#999;">暂无员工</div>';
+    return;
+  }
+  
+  var html = `
+    <div class="table-wrapper" style="max-height: 400px; overflow-y: auto;">
+      <table style="width:100%; border-collapse:collapse; background:white; min-width:600px;">
+        <thead>
+          <tr style="background:#f8f9fa; position:sticky; top:0; z-index:10;">
+            <th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">ID</th>
+            <th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">姓名</th>
+            <th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">电话</th>
+            <th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">钉钉ID</th>
+            <th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">状态</th>
+            <th style="padding:10px 12px; text-align:center; border-bottom:2px solid #eee;">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+  `;
+  
+  for (var i = 0; i < agents.length; i++) {
+    var agent = agents[i];
+    var statusText = agent.is_active == 1 ? '✅ 启用' : '⛔ 停用';
+    var statusColor = agent.is_active == 1 ? '#28a745' : '#dc3545';
+    
+    html += `
+      <tr style="border-bottom:1px solid #eee;">
+        <td style="padding:8px 12px;">${agent.id}</td>
+        <td style="padding:8px 12px; font-weight:500;">${escapeHtml(agent.agent_name)}</td>
+        <td style="padding:8px 12px;">${escapeHtml(agent.phone_number || '-')}</td>
+        <td style="padding:8px 12px;">${escapeHtml(agent.dingtalk_id || '-')}</td>
+        <td style="padding:8px 12px;">
+          <span style="background:${statusColor}; color:white; padding:2px 10px; border-radius:20px; font-size:12px;">
+            ${statusText}
+          </span>
+        </td>
+        <td style="padding:8px 12px; text-align:center;">
+          <button class="btn btn-primary btn-small" onclick="editStaff(${agent.id})" style="margin-right:5px;">编辑</button>
+          <button class="btn ${agent.is_active == 1 ? 'btn-danger' : 'btn-success'} btn-small" onclick="toggleStaffStatus(${agent.id}, ${agent.is_active})">
+            ${agent.is_active == 1 ? '停用' : '启用'}
+          </button>
+        </td>
+      </tr>
+    `;
+  }
+  
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
+function showAddStaffForm() {
+  showStaffForm(null);
+}
+
+function editStaff(id) {
+  // Get the agent data first
+  fetch("/api/get-agents?all=true")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var agent = data.agents.find(function(a) { return a.id === id; });
+        if (agent) {
+          showStaffForm(agent);
+        } else {
+          alert('未找到该员工');
+        }
+      }
+    })
+    .catch(function(err) {
+      alert('加载失败: ' + err.message);
+    });
+}
+
+function showStaffForm(agent) {
+  var isEdit = !!agent;
+  var title = isEdit ? '编辑员工' : '添加员工';
+  var name = agent ? agent.agent_name : '';
+  var phone = agent ? agent.phone_number : '';
+  var dingtalk = agent ? agent.dingtalk_id : '';
+  var id = agent ? agent.id : null;
+  
+  // Remove existing form if any
+  var existingForm = document.getElementById('staffFormContainer');
+  if (existingForm) existingForm.remove();
+  
+  var container = document.getElementById('staffModalBody');
+  var formHtml = `
+    <div id="staffFormContainer" style="background:#f8f9fa; padding:15px 20px; border-radius:8px; margin-bottom:15px; border:1px solid #e0e0e0;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h4 style="margin:0;">${title}</h4>
+        <span style="cursor:pointer; color:#999; font-size:20px; line-height:1;" onclick="document.getElementById('staffFormContainer').remove()">×</span>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div>
+          <label style="font-size:13px; display:block; margin-bottom:4px;">姓名 *</label>
+          <input type="text" id="staffName" value="${escapeHtml(name)}" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:13px; display:block; margin-bottom:4px;">电话 *</label>
+          <input type="text" id="staffPhone" value="${escapeHtml(phone)}" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">
+        </div>
+        <div>
+          <label style="font-size:13px; display:block; margin-bottom:4px;">钉钉ID</label>
+          <input type="text" id="staffDingtalk" value="${escapeHtml(dingtalk)}" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">
+        </div>
+        <div style="display:flex; align-items:flex-end;">
+          <button class="btn btn-success" onclick="saveStaff(${id})" style="width:100%;">保存</button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  container.insertAdjacentHTML('afterbegin', formHtml);
+}
+
+function saveStaff(id) {
+  var name = document.getElementById('staffName').value.trim();
+  var phone = document.getElementById('staffPhone').value.trim();
+  var dingtalk = document.getElementById('staffDingtalk').value.trim();
+  
+  if (!name) {
+    alert('请输入姓名');
+    return;
+  }
+  if (!phone) {
+    alert('请输入电话');
+    return;
+  }
+  
+  var url = id ? '/api/update-agent' : '/api/add-agent';
+  var method = id ? 'PUT' : 'POST';
+  var body = {
+    agent_name: name,
+    phone_number: phone,
+    dingtalk_id: dingtalk || null
+  };
+  if (id) body.id = id;
+  
+  var msgEl = document.getElementById('staffMsg');
+  msgEl.textContent = '保存中...';
+  msgEl.style.color = '#666';
+  
+  fetch(url, {
+    method: method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      msgEl.textContent = '✅ 保存成功！';
+      msgEl.style.color = '#28a745';
+      var form = document.getElementById('staffFormContainer');
+      if (form) form.remove();
+      loadStaffData();
+      // Also refresh agents list for the main page
+      loadAgents();
+      setTimeout(function() {
+        msgEl.textContent = '';
+      }, 3000);
+    } else {
+      msgEl.textContent = '❌ ' + (data.error || '保存失败');
+      msgEl.style.color = '#dc3545';
+    }
+  })
+  .catch(function(err) {
+    msgEl.textContent = '❌ 网络错误: ' + err.message;
+    msgEl.style.color = '#dc3545';
+  });
+}
+
+function toggleStaffStatus(id, currentStatus) {
+  var newStatus = currentStatus == 1 ? 0 : 1;
+  var action = newStatus == 1 ? '启用' : '停用';
+  
+  if (!confirm('确定要' + action + '该员工吗？')) return;
+  
+  fetch('/api/toggle-agent-status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id, is_active: newStatus })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      var msgEl = document.getElementById('staffMsg');
+      msgEl.textContent = '✅ 状态已更新';
+      msgEl.style.color = '#28a745';
+      loadStaffData();
+      loadAgents();
+      setTimeout(function() {
+        msgEl.textContent = '';
+      }, 3000);
+    } else {
+      alert('操作失败: ' + (data.error || '未知错误'));
+    }
+  })
+  .catch(function(err) {
+    alert('网络错误: ' + err.message);
+  });
 }
 
 function renderTable(leads) {
