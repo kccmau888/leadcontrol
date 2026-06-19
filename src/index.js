@@ -1931,6 +1931,23 @@ function escapeHtml(str) {
   });
 }
 
+function formatCurrency(amount) {
+  if (!amount || amount === '-' || amount === '' || amount === 'null' || amount === 'undefined') {
+    return '-';
+  }
+  // Remove any non-numeric characters (except decimal point)
+  var cleanAmount = String(amount).replace(/[^0-9.]/g, '');
+  var num = parseFloat(cleanAmount);
+  if (isNaN(num) || num === 0) {
+    return '-';
+  }
+  // Format as HKD with comma separators
+  return '$' + num.toLocaleString('en-HK', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0
+  });
+}
+
 function loadConversionTrend() {
   var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
   var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
@@ -2193,8 +2210,8 @@ function renderTable(leads) {
   }
   
   var html = '<div class="table-wrapper"><table><thead><tr>';
-  html += '<th>ID</th><th>客户号</th><th>询问途径</th><th>代理</th><th>区域</th><th>租金</th><th>售价</th>';
-  html += '<th>交易类型</th><th>来源</th><th>Campaign</th><th>状态</th><th>预算</th><th>转化价值</th>';
+  html += '<th>ID</th><th>客户号</th><th>询问途径</th><th>代理</th><th>区域</br>转化页</th><th>租金</th><th>售价</th>';
+  html += '<th>交易类型</th><th>来源</br>着陆页</th><th>Campaign</th><th>状态</th><th>预算</th><th>转化价值</th>';
   html += '<th>询问时间</br>(转化时间)</th><th>验证人/跟进人</th><th>验证时间</th><th>操作</th>';
   html += '</thead><tbody>';
   
@@ -2261,8 +2278,8 @@ function renderTable(leads) {
     html += '<td>' + lead.click_type + '</td>';    
     html += '<td>' + (lead.agent_name || '-') + '</td>';
     html += '<td>' + (lead.district || '-') + '</td>';
-    html += '<td>' + (lead.rent || '-') + '</td>';
-    html += '<td>' + (lead.property_price || '-') + '</td>'; 
+    html += '<td>' + (formatCurrency(lead.rent) || '-') + '</td>';
+    html += '<td>' + (formatCurrency(lead.property_price) || '-') + '</td>'; 
     html += '<td><select id="tx_type_' + lead.id + '" class="tx-type-select" onchange="onTransactionTypeChange(' + lead.id + ')" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="rent" ' + (lead.transaction_type === 'rent' ? 'selected' : '') + '>租用</option>';
     html += '<option value="buy" ' + (lead.transaction_type === 'buy' ? 'selected' : '') + '>购买</option>';
