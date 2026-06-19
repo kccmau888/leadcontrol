@@ -1544,7 +1544,7 @@ async function handleAdminPage(env) {
     .second-row td {
         border: none !important;         /* No borders at all */
         padding: 2px 8px 4px 8px !important;  /* Even shorter */
-        font-size: 12px;                /* Smaller font */
+        font-size: 14px;                /* Smaller font */
         color: #666;                    /* Gray color */
         background-color: transparent !important;
     }
@@ -2178,7 +2178,11 @@ function renderTable(leads) {
     html += '<td></td>';
     html += '<td></td>';
     html += '<td></td>';
-    html += '<td>(' + lead.time_to_conversion + ')</td>';
+    var junkClass = "";
+    if (lead.time_to_conversion && lead.time_to_conversion < "00:01:00") {
+        junkClass = ' style="color:red;"';
+    }
+    html += '<td' + junkClass + '>(' + lead.time_to_conversion + ')</td>';
     html += '<td></td>';
     html += '<td><td>';
     html += '<td></td>';
