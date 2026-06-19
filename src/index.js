@@ -3219,7 +3219,7 @@ function showStaffForm(agent) {
   var html = '<div id="staffFormContainer" style="background:#f8f9fa; padding:15px 20px; border-radius:8px; margin-bottom:15px; border:1px solid #e0e0e0;">';
   html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">';
   html += '<h4 style="margin:0;">' + title + '</h4>';
-  html += '<span style="cursor:pointer; color:#999; font-size:20px; line-height:1;" onclick="document.getElementById(\'staffFormContainer\').remove()">×</span>';
+  html += '<span style="cursor:pointer; color:#999; font-size:20px; line-height:1;" onclick="document.getElementById(&quot;staffFormContainer&quot;).remove()">×</span>';
   html += '</div>';
   html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">';
   html += '<div>';
