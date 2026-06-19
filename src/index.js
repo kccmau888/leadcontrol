@@ -1516,12 +1516,12 @@ async function handleAdminPage(env) {
   <title>LeasingHub 管理后台</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; overflow-x: auto; max-width: 100vw; }
     .login-box { max-width: 400px; margin: 100px auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
     .login-box input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
     .login-box button { width: 100%; padding: 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; }
     .error { color: red; margin-top: 10px; display: none; }
-    .admin-box {max-width: 100%; padding: 20px;}
+    .admin-box {max-width: 100%; padding: 20px; overflow-x: auto;}
     
     /* Stats Grid */
     .stats-grid { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -1532,9 +1532,14 @@ async function handleAdminPage(env) {
     .table-wrapper { overflow-x: auto; }
     .wrap-text { word-wrap: break-word; white-space: normal; word-break: break-word; max-width: 250px; }
     table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; min-width: 1300px; }
-    th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; white-space: nowrap; }
+    th, td { padding: 12px; text-align: left; white-space: nowrap; border-bottom: 1px solid #eee; }
     th { background: #f8f9fa; position: sticky; top: 0; }
-    
+
+    /* Remove top border on second row of each pair */
+    table tbody tr + tr td {
+        border-top: none !important;
+    }
+
     /* Buttons */
     .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px; }
     .btn-primary { background: #667eea; color: white; }
@@ -2156,6 +2161,7 @@ function renderTable(leads) {
     html += '<td></td>';    
     html += '<td></td>';
     html += '<td colspan="6">' + pageLocation + '</td>';
+    html += '<td></td>';
     html += '<td></td>';
     html += '<td></td>';
     html += '<td>(' + lead.time_to_conversion + ')</td>';
