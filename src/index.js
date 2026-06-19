@@ -1535,17 +1535,15 @@ async function handleAdminPage(env) {
     th, td { padding: 4px 8px; text-align: left; white-space: nowrap; }  /* Reduced from 12px to 4px */
     th { background: #f8f9fa; position: sticky; top: 0; }
 
+    /* Remove bottom border from first row of each record */
     table tbody tr td {
-        border-bottom: none;
-        padding: 4px 8px;
+        border-bottom: none !important;
     }
 
+    /* Remove top border from second row of each record */
     table tbody tr + tr td {
-      border-top: none !important;
-      border-bottom: 1px solid #eee;
-      padding: 2px 8px 4px 8px;  
-      font-size: 11px;  /* Smaller font for URL */
-      color: #666;      /* Gray color for URL */
+        border-top: none !important;
+        border-bottom: 1px solid #eee;  /* Keep bottom border for separation between records */
     }
 
     /* Buttons */
