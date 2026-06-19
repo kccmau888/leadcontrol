@@ -3026,25 +3026,28 @@ function render() {
       '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>' +
       '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
       '</div>';
-// Chart group button event listeners
-var groupBtns = document.querySelectorAll('.btn-group-btn');
-for (var i = 0; i < groupBtns.length; i++) {
-  groupBtns[i].addEventListener('click', function(e) {
-    var group = this.getAttribute('data-group');
-    setChartGroup(group);
-  });
-}   
-loadCombinedConversionStats();  
-loadConversionTrend();
-loadFilters();
-loadAgents().then(function() {
-  loadLeads();
-});
-loadAllHotlineSelections();
+
+    // Chart group button event listeners
+    var groupBtns = document.querySelectorAll('.btn-group-btn');
+    for (var i = 0; i < groupBtns.length; i++) {
+      groupBtns[i].addEventListener('click', function(e) {
+        var group = this.getAttribute('data-group');
+        setChartGroup(group);
+      });
+    }   
+    
+    loadCombinedConversionStats();  
+    loadConversionTrend();
+    loadFilters();
+    loadAgents().then(function() {
+      loadLeads();
+    });
+    loadAllHotlineSelections();
   } else {
     app.innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
   }
 }
+  
 // ============================================
 // Google Sheet Reinstatement
 // ============================================
