@@ -60,23 +60,35 @@ export default {
     if (path === '/api/get-agents' && request.method === 'GET') {
       return handleGetAgents(request, env);
     }
-if (path === '/api/conversion-trend' && request.method === 'GET') {
-  return handleConversionTrend(env, request);
-}
+    if (path === '/api/add-agent' && request.method === 'POST') {
+      return handleAddAgent(request, env);
+    }
+    if (path === '/api/update-agent' && request.method === 'PUT') {
+      return handleUpdateAgent(request, env);
+    }
+    if (path === '/api/toggle-agent-status' && request.method === 'POST') {
+      return handleToggleAgentStatus(request, env);
+    }
 
-if (path === '/api/combined-conversion-stats' && request.method === 'GET') {
-  return handleCombinedConversionStats(env, request);
-}
+    // Conversion Chart
+    if (path === '/api/conversion-trend' && request.method === 'GET') {
+      return handleConversionTrend(env, request);
+    }
 
-if (path === '/api/export-reinstatement-to-sheets' && request.method === 'POST') {
-  return handleExportReinstatementToSheets(request, env);
-}
+    if (path === '/api/combined-conversion-stats' && request.method === 'GET') {
+      return handleCombinedConversionStats(env, request);
+    }
+
+    if (path === '/api/export-reinstatement-to-sheets' && request.method === 'POST') {
+      return handleExportReinstatementToSheets(request, env);
+    }
+    
     if (path === '/api/debug-all-vars' && request.method === 'GET') {
-  return handleDebugAllVars(request, env);
-}
-    return new Response('Not found', { status: 404 });
-  }
-};
+      return handleDebugAllVars(request, env);
+    }
+      return new Response('Not found', { status: 404 });
+    }
+  };
 
 async function handleExportReinstatementToSheets(request, env) {
   try {
