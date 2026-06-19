@@ -1991,7 +1991,6 @@ function loadFilters() {
         html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
         html += '<button class="btn btn-primary" onclick="applyFilters()">搜索</button>';
         html += '<button onclick="resetFilters()">重置</button>';
-        html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
         html += '</div>';
         document.getElementById('filtersPanel').innerHTML = html;
       }
@@ -2990,332 +2989,62 @@ function loadCombinedConversionStats() {
     });
 }
 
-function showStaffManagement() {
-  // Create modal for staff management
-  var modal = document.createElement('div');
-  modal.id = 'staffModal';
-  modal.className = 'modal';
-  modal.style.display = 'block';
-  
-  var html = '<div class="modal-content" style="max-width: 700px; width: 90%;">';
-  html += '<div class="modal-header">';
-  html += '<h3>👥 员工管理</h3>';
-  html += '<span class="modal-close" onclick="closeStaffModal()">&times;</span>';
-  html += '</div>';
-  html += '<div id="staffModalBody">';
-  html += '<div style="margin-bottom: 15px;">';
-  html += '<button class="btn btn-primary" onclick="showAddStaffForm()">+ 添加员工</button>';
-  html += '<span id="staffMsg" style="margin-left: 15px; font-size: 14px;"></span>';
-  html += '</div>';
-  html += '<div id="staffTableContainer">';
-  html += '<div style="text-align:center;padding:20px;">加载中...</div>';
-  html += '</div>';
-  html += '</div>';
-  html += '</div>';
-  
-  modal.innerHTML = html;
-  document.body.appendChild(modal);
-  
-  // Load staff data
-  loadStaffData();
-}
-
-function closeStaffModal() {
-  var modal = document.getElementById('staffModal');
-  if (modal) {
-    modal.remove();
-  }
-}
-
-function loadStaffData() {
-  fetch("/api/get-agents?all=true")
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success) {
-        renderStaffTable(data.agents || []);
-      } else {
-        document.getElementById('staffTableContainer').innerHTML = 
-          '<div style="color:red">加载失败: ' + (data.error || '未知错误') + '</div>';
-      }
-    })
-    .catch(function(err) {
-      document.getElementById('staffTableContainer').innerHTML = 
-        '<div style="color:red">网络错误: ' + err.message + '</div>';
-    });
-}
-
-function renderStaffTable(agents) {
-  var container = document.getElementById('staffTableContainer');
-  if (!container) return;
-  
-  if (!agents || agents.length === 0) {
-    container.innerHTML = '<div style="text-align:center;padding:30px;color:#999;">暂无员工</div>';
-    return;
-  }
-  
-  var html = '<div class="table-wrapper" style="max-height: 400px; overflow-y: auto;">';
-  html += '<table style="width:100%; border-collapse:collapse; background:white; min-width:600px;">';
-  html += '<thead>';
-  html += '<tr style="background:#f8f9fa; position:sticky; top:0; z-index:10;">';
-  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">ID</th>';
-  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">姓名</th>';
-  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">电话</th>';
-  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">钉钉ID</th>';
-  html += '<th style="padding:10px 12px; text-align:left; border-bottom:2px solid #eee;">状态</th>';
-  html += '<th style="padding:10px 12px; text-align:center; border-bottom:2px solid #eee;">操作</th>';
-  html += '</tr>';
-  html += '</thead>';
-  html += '<tbody>';
-  
-  for (var i = 0; i < agents.length; i++) {
-    var agent = agents[i];
-    var statusText = agent.is_active == 1 ? '✅ 启用' : '⛔ 停用';
-    var statusColor = agent.is_active == 1 ? '#28a745' : '#dc3545';
-    
-    html += '<tr style="border-bottom:1px solid #eee;">';
-    html += '<td style="padding:8px 12px;">' + agent.id + '</td>';
-    html += '<td style="padding:8px 12px; font-weight:500;">' + escapeHtml(agent.agent_name) + '</td>';
-    html += '<td style="padding:8px 12px;">' + escapeHtml(agent.phone_number || '-') + '</td>';
-    html += '<td style="padding:8px 12px;">' + escapeHtml(agent.dingtalk_id || '-') + '</td>';
-    html += '<td style="padding:8px 12px;">';
-    html += '<span style="background:' + statusColor + '; color:white; padding:2px 10px; border-radius:20px; font-size:12px;">';
-    html += statusText;
-    html += '</span>';
-    html += '</td>';
-    html += '<td style="padding:8px 12px; text-align:center;">';
-    html += '<button class="btn btn-primary btn-small" onclick="editStaff(' + agent.id + ')" style="margin-right:5px;">编辑</button>';
-    html += '<button class="btn ' + (agent.is_active == 1 ? 'btn-danger' : 'btn-success') + ' btn-small" onclick="toggleStaffStatus(' + agent.id + ', ' + agent.is_active + ')">';
-    html += agent.is_active == 1 ? '停用' : '启用';
-    html += '</button>';
-    html += '</td>';
-    html += '</tr>';
-  }
-  
-  html += '</tbody>';
-  html += '</table>';
-  html += '</div>';
-  
-  container.innerHTML = html;
-}
-
-function showAddStaffForm() {
-  showStaffForm(null);
-}
-
-function editStaff(id) {
-  // Get the agent data first
-  fetch("/api/get-agents?all=true")
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success) {
-        var agent = null;
-        for (var i = 0; i < data.agents.length; i++) {
-          if (data.agents[i].id === id) {
-            agent = data.agents[i];
-            break;
-          }
-        }
-        if (agent) {
-          showStaffForm(agent);
-        } else {
-          alert('未找到该员工');
-        }
-      }
-    })
-    .catch(function(err) {
-      alert('加载失败: ' + err.message);
-    });
-}
-
-function showStaffForm(agent) {
-  var isEdit = !!agent;
-  var title = isEdit ? '编辑员工' : '添加员工';
-  var name = agent ? agent.agent_name : '';
-  var phone = agent ? agent.phone_number : '';
-  var dingtalk = agent ? agent.dingtalk_id : '';
-  var id = agent ? agent.id : null;
-  
-  // Remove existing form if any
-  var existingForm = document.getElementById('staffFormContainer');
-  if (existingForm) existingForm.remove();
-  
-  var container = document.getElementById('staffModalBody');
-  
-  var html = '<div id="staffFormContainer" style="background:#f8f9fa; padding:15px 20px; border-radius:8px; margin-bottom:15px; border:1px solid #e0e0e0;">';
-  html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">';
-  html += '<h4 style="margin:0;">' + title + '</h4>';
-  html += '<span style="cursor:pointer; color:#999; font-size:20px; line-height:1;" onclick="document.getElementById(\'staffFormContainer\').remove()">×</span>';
-  html += '</div>';
-  html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">';
-  html += '<div>';
-  html += '<label style="font-size:13px; display:block; margin-bottom:4px;">姓名 *</label>';
-  html += '<input type="text" id="staffName" value="' + escapeHtml(name) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
-  html += '</div>';
-  html += '<div>';
-  html += '<label style="font-size:13px; display:block; margin-bottom:4px;">电话 *</label>';
-  html += '<input type="text" id="staffPhone" value="' + escapeHtml(phone) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
-  html += '</div>';
-  html += '<div>';
-  html += '<label style="font-size:13px; display:block; margin-bottom:4px;">钉钉ID</label>';
-  html += '<input type="text" id="staffDingtalk" value="' + escapeHtml(dingtalk) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
-  html += '</div>';
-  html += '<div style="display:flex; align-items:flex-end;">';
-  html += '<button class="btn btn-success" onclick="saveStaff(' + id + ')" style="width:100%;">保存</button>';
-  html += '</div>';
-  html += '</div>';
-  html += '</div>';
-  
-  container.insertAdjacentHTML('afterbegin', html);
-}
-
-function saveStaff(id) {
-  var name = document.getElementById('staffName').value.trim();
-  var phone = document.getElementById('staffPhone').value.trim();
-  var dingtalk = document.getElementById('staffDingtalk').value.trim();
-  
-  if (!name) {
-    alert('请输入姓名');
-    return;
-  }
-  if (!phone) {
-    alert('请输入电话');
-    return;
-  }
-  
-  var url = id ? '/api/update-agent' : '/api/add-agent';
-  var method = id ? 'PUT' : 'POST';
-  var body = {
-    agent_name: name,
-    phone_number: phone,
-    dingtalk_id: dingtalk || null
-  };
-  if (id) body.id = id;
-  
-  var msgEl = document.getElementById('staffMsg');
-  msgEl.textContent = '保存中...';
-  msgEl.style.color = '#666';
-  
-  fetch(url, {
-    method: method,
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.success) {
-      msgEl.textContent = '✅ 保存成功！';
-      msgEl.style.color = '#28a745';
-      var form = document.getElementById('staffFormContainer');
-      if (form) form.remove();
-      loadStaffData();
-      // Also refresh agents list for the main page
-      loadAgents();
-      setTimeout(function() {
-        msgEl.textContent = '';
-      }, 3000);
-    } else {
-      msgEl.textContent = '❌ ' + (data.error || '保存失败');
-      msgEl.style.color = '#dc3545';
-    }
-  })
-  .catch(function(err) {
-    msgEl.textContent = '❌ 网络错误: ' + err.message;
-    msgEl.style.color = '#dc3545';
-  });
-}
-
-function toggleStaffStatus(id, currentStatus) {
-  var newStatus = currentStatus == 1 ? 0 : 1;
-  var action = newStatus == 1 ? '启用' : '停用';
-  
-  if (!confirm('确定要' + action + '该员工吗？')) return;
-  
-  fetch('/api/toggle-agent-status', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: id, is_active: newStatus })
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(data) {
-    if (data.success) {
-      var msgEl = document.getElementById('staffMsg');
-      msgEl.textContent = '✅ 状态已更新';
-      msgEl.style.color = '#28a745';
-      loadStaffData();
-      loadAgents();
-      setTimeout(function() {
-        msgEl.textContent = '';
-      }, 3000);
-    } else {
-      alert('操作失败: ' + (data.error || '未知错误'));
-    }
-  })
-  .catch(function(err) {
-    alert('网络错误: ' + err.message);
-  });
-}
-
 function render() {
   var app = document.getElementById('app');
   if (token) {
-    var html = '<div class="admin-box">';
-    html += '<div class="button-bar">';
-    html += '<div style="display:flex; gap:10px; align-items:center;">';
-    html += '<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>';
-    html += '<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>';
-    html += '<button class="btn btn-danger" onclick="logout()">退出登录</button>';
-    html += '</div>';
-    html += '</div>';
-    html += '<div class="stats-and-hotline-row">';
-    html += '<div class="chart-container">';
-    html += '<div class="chart-header">';
-    html += '<h4>📈 有效转化趋势 (付费 vs 自然)</h4>';
-    html += '<div class="chart-group-selector">';
-    html += '<button class="btn-group-btn active" data-group="day">按日</button>';
-    html += '<button class="btn-group-btn" data-group="week">按周</button>';
-    html += '<button class="btn-group-btn" data-group="month">按月</button>';
-    html += '</div>';
-    html += '</div>';
-    html += '<canvas id="conversionChart" style="width:100%; height:180px;"></canvas>';
-    html += '</div>';
-    html += '<div id="combinedStatsCard" class="combined-stats-container"></div>';
-    html += '<div class="hotline-card">';
-    html += '<div class="hotline-row">';
-    html += '<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>';
-    html += '<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>';
-    html += '<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>';
-    html += '<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>';
-    html += '</div>';
-    html += '</div>';
-    html += '</div>';
-    html += '<div id="filtersPanel"></div>';
-    html += '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>';
-    html += '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>';
-    html += '</div>';
-    
-    app.innerHTML = html;
-
-    // Chart group button event listeners
-    var groupBtns = document.querySelectorAll('.btn-group-btn');
-    for (var i = 0; i < groupBtns.length; i++) {
-      groupBtns[i].addEventListener('click', function(e) {
-        var group = this.getAttribute('data-group');
-        setChartGroup(group);
-      });
-    }   
-    
-    loadCombinedConversionStats();  
-    loadConversionTrend();
-    loadFilters();
-    loadAgents().then(function() {
-      loadLeads();
-    });
-    loadAllHotlineSelections();
+    app.innerHTML = '<div class="admin-box">' +
+'<div class="button-bar">' +
+'<div style="display:flex; gap:10px; align-items:center;">' +
+'<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>' +
+'<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>' +
+'<button class="btn btn-danger" onclick="logout()">退出登录</button>' +
+'</div>' +
+'</div>' +
+'<div class="stats-and-hotline-row">' +
+'<div class="chart-container">' +
+'<div class="chart-header">' +
+'<h4>📈 有效转化趋势 (付费 vs 自然)</h4>' +
+'<div class="chart-group-selector">' +
+'<button class="btn-group-btn active" data-group="day">按日</button>' +
+'<button class="btn-group-btn" data-group="week">按周</button>' +
+'<button class="btn-group-btn" data-group="month">按月</button>' +
+'</div>' +
+'</div>' +
+'<canvas id="conversionChart" style="width:100%; height:180px;"></canvas>' +
+'</div>' +
+'<div id="combinedStatsCard" class="combined-stats-container"></div>' +
+'<div class="hotline-card">' +
+'<div class="hotline-row">' +
+'<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>' +
+'<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>' +
+'<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>' +
+'<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>' +
+'</div>' +
+'</div>' +
+'</div>' +
+      '<div id="filtersPanel"></div>' +
+      '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>' +
+      '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
+      '</div>';
+// Chart group button event listeners
+var groupBtns = document.querySelectorAll('.btn-group-btn');
+for (var i = 0; i < groupBtns.length; i++) {
+  groupBtns[i].addEventListener('click', function(e) {
+    var group = this.getAttribute('data-group');
+    setChartGroup(group);
+  });
+}   
+loadCombinedConversionStats();  
+loadConversionTrend();
+loadFilters();
+loadAgents().then(function() {
+  loadLeads();
+});
+loadAllHotlineSelections();
   } else {
     app.innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
   }
 }
-  
 // ============================================
 // Google Sheet Reinstatement
 // ============================================
