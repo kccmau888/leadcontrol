@@ -1532,12 +1532,20 @@ async function handleAdminPage(env) {
     .table-wrapper { overflow-x: auto; }
     .wrap-text { word-wrap: break-word; white-space: normal; word-break: break-word; max-width: 250px; }
     table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; min-width: 1300px; }
-    th, td { padding: 12px; text-align: left; white-space: nowrap; border-bottom: 1px solid #eee; }
+    th, td { padding: 4px 8px; text-align: left; white-space: nowrap; }  /* Reduced from 12px to 4px */
     th { background: #f8f9fa; position: sticky; top: 0; }
 
-    /* Remove top border on second row of each pair */
+    table tbody tr td {
+        border-bottom: none;
+        padding: 4px 8px;
+    }
+
     table tbody tr + tr td {
-        border-top: none !important;
+      border-top: none !important;
+      border-bottom: 1px solid #eee;
+      padding: 2px 8px 4px 8px;  
+      font-size: 11px;  /* Smaller font for URL */
+      color: #666;      /* Gray color for URL */
     }
 
     /* Buttons */
