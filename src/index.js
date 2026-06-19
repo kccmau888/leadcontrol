@@ -3177,6 +3177,30 @@ function showAddStaffForm() {
   showStaffForm(null);
 }
 
+function editStaff(id) {
+  // Get the agent data first
+  fetch("/api/get-agents?all=true")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        var agent = null;
+        for (var i = 0; i < data.agents.length; i++) {
+          if (data.agents[i].id === id) {
+            agent = data.agents[i];
+            break;
+          }
+        }
+        if (agent) {
+          showStaffForm(agent);
+        } else {
+          alert('未找到该员工');
+        }
+      }
+    })
+    .catch(function(err) {
+      alert('加载失败: ' + err.message);
+    });
+}
 
 
 
@@ -3193,6 +3217,93 @@ function showAddStaffForm() {
 
 
 
+
+function saveStaff(id) {
+  var name = document.getElementById('staffName').value.trim();
+  var phone = document.getElementById('staffPhone').value.trim();
+  var dingtalk = document.getElementById('staffDingtalk').value.trim();
+  
+  if (!name) {
+    alert('请输入姓名');
+    return;
+  }
+  if (!phone) {
+    alert('请输入电话');
+    return;
+  }
+  
+  var url = id ? '/api/update-agent' : '/api/add-agent';
+  var method = id ? 'PUT' : 'POST';
+  var body = {
+    agent_name: name,
+    phone_number: phone,
+    dingtalk_id: dingtalk || null
+  };
+  if (id) body.id = id;
+  
+  var msgEl = document.getElementById('staffMsg');
+  msgEl.textContent = '保存中...';
+  msgEl.style.color = '#666';
+  
+  fetch(url, {
+    method: method,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      msgEl.textContent = '✅ 保存成功！';
+      msgEl.style.color = '#28a745';
+      var form = document.getElementById('staffFormContainer');
+      if (form) form.remove();
+      loadStaffData();
+      // Also refresh agents list for the main page
+      loadAgents();
+      setTimeout(function() {
+        msgEl.textContent = '';
+      }, 3000);
+    } else {
+      msgEl.textContent = '❌ ' + (data.error || '保存失败');
+      msgEl.style.color = '#dc3545';
+    }
+  })
+  .catch(function(err) {
+    msgEl.textContent = '❌ 网络错误: ' + err.message;
+    msgEl.style.color = '#dc3545';
+  });
+}
+
+function toggleStaffStatus(id, currentStatus) {
+  var newStatus = currentStatus == 1 ? 0 : 1;
+  var action = newStatus == 1 ? '启用' : '停用';
+  
+  if (!confirm('确定要' + action + '该员工吗？')) return;
+  
+  fetch('/api/toggle-agent-status', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: id, is_active: newStatus })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      var msgEl = document.getElementById('staffMsg');
+      msgEl.textContent = '✅ 状态已更新';
+      msgEl.style.color = '#28a745';
+      loadStaffData();
+      loadAgents();
+      setTimeout(function() {
+        msgEl.textContent = '';
+      }, 3000);
+    } else {
+      alert('操作失败: ' + (data.error || '未知错误'));
+    }
+  })
+  .catch(function(err) {
+    alert('网络错误: ' + err.message);
+  });
+}
 // ============================================
 // Google Sheet Reinstatement
 // ============================================
