@@ -812,7 +812,7 @@ async function handleAdminGetLeads(request, env) {
     const dataStmt = await env.lead_db.prepare(`
       SELECT id, client_id, user_ip, agent_name, agent_phone, click_type,
         rent, property_price, size, district, property_type,
-        landing_page, page_location, page_referrer,
+        landing_page, page_location,
         utm_source, utm_medium, utm_campaign, gclid,
         traffic_type, traffic_source, campaign_name,
         value, status, verified_by, created_at, time_to_conversion, verified_at, budget_range, transaction_type
@@ -2153,7 +2153,7 @@ function renderTable(leads) {
     html += '<td>(' + lead.user_ip + ')</td>';  
     html += '<td></td>';    
     html += '<td></td>';
-    html += '<td colspan='6'>' + lead.page_location + '</td>';
+    html += '<td colspan="6">' + lead.page_location + '</td>';
     html += '<td></td>';
     html += '<td></td>';
     html += '<td></td>';
