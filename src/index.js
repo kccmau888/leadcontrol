@@ -1521,7 +1521,7 @@ async function handleAdminPage(env) {
     .login-box input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
     .login-box button { width: 100%; padding: 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; }
     .error { color: red; margin-top: 10px; display: none; }
-    .admin-box {max-width: 100%; padding: 20px; overflow-x: auto;}
+    .admin-box {max-width: 100%; padding: 20px; overflow: visible;}
     
     /* Stats Grid */
     .stats-grid { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -1529,7 +1529,7 @@ async function handleAdminPage(env) {
     .stat-card .number { font-size: 32px; font-weight: bold; }
     
     /* Table */
-    .table-wrapper { overflow-x: auto; }
+    .table-wrapper { overflow-x: auto; overflow-y: visible; width: 100%; -webkit-overflow-scrolling: touch;}
     .wrap-text { word-wrap: break-word; white-space: normal; word-break: break-word; max-width: 250px; }
     table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; min-width: 1300px; }
     th, td { padding: 4px 8px; text-align: left; white-space: nowrap; }  /* Reduced from 12px to 4px */
