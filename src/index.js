@@ -3185,7 +3185,7 @@ function editStaff(id) {
       if (data.success) {
         var agent = null;
         for (var i = 0; i < data.agents.length; i++) {
-          if (data.agents[i].id === id) {
+          if (data.agents[i].id == id) {
             agent = data.agents[i];
             break;
           }
@@ -3224,18 +3224,18 @@ function showStaffForm(agent) {
   html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">';
   html += '<div>';
   html += '<label style="font-size:13px; display:block; margin-bottom:4px;">姓名 *</label>';
-  html += '<input type="text" id="staffName" value="' + escapeHtml(name) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
+  html += '<input type="text" id="staffName" value="' + (name || '') + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
   html += '</div>';
   html += '<div>';
   html += '<label style="font-size:13px; display:block; margin-bottom:4px;">电话 *</label>';
-  html += '<input type="text" id="staffPhone" value="' + escapeHtml(phone) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
+  html += '<input type="text" id="staffPhone" value="' + (phone || '') + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
   html += '</div>';
   html += '<div>';
   html += '<label style="font-size:13px; display:block; margin-bottom:4px;">钉钉ID</label>';
-  html += '<input type="text" id="staffDingtalk" value="' + escapeHtml(dingtalk) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
+  html += '<input type="text" id="staffDingtalk" value="' + (dingtalk || '') + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
   html += '</div>';
   html += '<div style="display:flex; align-items:flex-end;">';
-  html += '<button class="btn btn-success" onclick="saveStaff(' + id + ')" style="width:100%;">保存</button>';
+  html += '<button class="btn btn-success" onclick="saveStaff(' + (id || 'null') + ')" style="width:100%;">保存</button>';
   html += '</div>';
   html += '</div>';
   html += '</div>';
