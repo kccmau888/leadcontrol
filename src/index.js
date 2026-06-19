@@ -1521,7 +1521,7 @@ async function handleAdminPage(env) {
     .login-box input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
     .login-box button { width: 100%; padding: 10px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer; }
     .error { color: red; margin-top: 10px; display: none; }
-    .admin-box { padding: 20px; }
+    .admin-box {max-width: 100%; padding: 20px;}
     
     /* Stats Grid */
     .stats-grid { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -2111,7 +2111,7 @@ function renderTable(leads) {
     var rowClass = frozen ? 'frozen-row' : '';
     html += '<tr class="' + rowClass + '">';
     html += '<td>' + lead.id + '</td>';
-    html += '<td class="wrap-text">' + clientDisplay + '</br>(' + lead.user_ip + ')</td>';  
+    html += '<td class="wrap-text">' + clientDisplay + '</td>';  
     html += '<td>' + lead.click_type + '</td>';    
     html += '<td>' + (lead.agent_name || '-') + '</td>';
     html += '<td>' + (lead.district || '-') + '</td>';
@@ -2135,7 +2135,7 @@ function renderTable(leads) {
     }
     html += '</select></td>';
     html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
-    html += '<td>' + new Date(lead.created_at).toLocaleString() + '</br>(' + lead.time_to_conversion + ')</td>';
+    html += '<td>' + new Date(lead.created_at).toLocaleString() + '</td>';
     // 验证人 dropdown
     html += '<td><select id="verified_by_' + lead.id + '" class="verified-by-select" data-lead-id="' + lead.id + '" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="">-</option>';
@@ -2158,7 +2158,7 @@ function renderTable(leads) {
     html += '<td colspan="6">' + pageLocation + '</td>';
     html += '<td></td>';
     html += '<td></td>';
-    html += '<td></td>';
+    html += '<td>(' + lead.time_to_conversion + ')</td>';
     html += '<td></td>';
     html += '<td><td>';
     html += '<td></td>';
