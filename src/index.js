@@ -3202,21 +3202,46 @@ function editStaff(id) {
     });
 }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+function showStaffForm(agent) {
+  var isEdit = !!agent;
+  var title = isEdit ? '编辑员工' : '添加员工';
+  var name = agent ? agent.agent_name : '';
+  var phone = agent ? agent.phone_number : '';
+  var dingtalk = agent ? agent.dingtalk_id : '';
+  var id = agent ? agent.id : null;
+  
+  // Remove existing form if any
+  var existingForm = document.getElementById('staffFormContainer');
+  if (existingForm) existingForm.remove();
+  
+  var container = document.getElementById('staffModalBody');
+  
+  var html = '<div id="staffFormContainer" style="background:#f8f9fa; padding:15px 20px; border-radius:8px; margin-bottom:15px; border:1px solid #e0e0e0;">';
+  html += '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">';
+  html += '<h4 style="margin:0;">' + title + '</h4>';
+  html += '<span style="cursor:pointer; color:#999; font-size:20px; line-height:1;" onclick="document.getElementById(\'staffFormContainer\').remove()">×</span>';
+  html += '</div>';
+  html += '<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">';
+  html += '<div>';
+  html += '<label style="font-size:13px; display:block; margin-bottom:4px;">姓名 *</label>';
+  html += '<input type="text" id="staffName" value="' + escapeHtml(name) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
+  html += '</div>';
+  html += '<div>';
+  html += '<label style="font-size:13px; display:block; margin-bottom:4px;">电话 *</label>';
+  html += '<input type="text" id="staffPhone" value="' + escapeHtml(phone) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
+  html += '</div>';
+  html += '<div>';
+  html += '<label style="font-size:13px; display:block; margin-bottom:4px;">钉钉ID</label>';
+  html += '<input type="text" id="staffDingtalk" value="' + escapeHtml(dingtalk) + '" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:4px; box-sizing:border-box;">';
+  html += '</div>';
+  html += '<div style="display:flex; align-items:flex-end;">';
+  html += '<button class="btn btn-success" onclick="saveStaff(' + id + ')" style="width:100%;">保存</button>';
+  html += '</div>';
+  html += '</div>';
+  html += '</div>';
+  
+  container.insertAdjacentHTML('afterbegin', html);
+}
 
 function saveStaff(id) {
   var name = document.getElementById('staffName').value.trim();
