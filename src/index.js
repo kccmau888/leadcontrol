@@ -1535,15 +1535,23 @@ async function handleAdminPage(env) {
     th, td { padding: 4px 8px; text-align: left; white-space: nowrap; }  /* Reduced from 12px to 4px */
     th { background: #f8f9fa; position: sticky; top: 0; }
 
-    /* Remove bottom border from first row of each record */
-    table tbody tr td {
-        border-bottom: none !important;
+    .first-row td {
+    border-bottom: none !important;  /* Remove bottom border */
+    padding: 4px 8px !important;     /* Short height */
     }
 
-    /* Remove top border from second row of each record */
-    table tbody tr + tr td {
-        border-top: none !important;
-        border-bottom: 1px solid #eee;  /* Keep bottom border for separation between records */
+    /* Second row - no borders, shorter, smaller font */
+    .second-row td {
+        border: none !important;         /* No borders at all */
+        padding: 2px 8px 4px 8px !important;  /* Even shorter */
+        font-size: 12px;                /* Smaller font */
+        color: #666;                    /* Gray color */
+        background-color: transparent !important;
+    }
+
+    /* Add border between records (after second row) */
+    .second-row td {
+        border-bottom: 1px solid #eee !important;  /* Keep this for separation between records */
     }
 
     /* Buttons */
@@ -2120,7 +2128,7 @@ function renderTable(leads) {
       : (lead.client_id || '-');
     
     var rowClass = frozen ? 'frozen-row' : '';
-    html += '<tr class="' + rowClass + '">';
+    html += '<tr class="' + rowClass + ' first-row">';
     html += '<td>' + lead.id + '</td>';
     html += '<td class="wrap-text">' + clientDisplay + '</td>';  
     html += '<td>' + lead.click_type + '</td>';    
@@ -2161,7 +2169,7 @@ function renderTable(leads) {
     html += '<td><button class="btn btn-primary" onclick="updateLead(' + lead.id + ')" style="padding:4px 8px;font-size:12px" ' + (frozen ? 'disabled' : '') + '>保存</button></td>';
     html += '</tr>';
 
-    html += '<tr class="' + rowClass + '">';
+    html += '<tr class="' + rowClass + ' second-row">';
     html += '<td></td>';
     html += '<td>(' + lead.user_ip + ')</td>';  
     html += '<td></td>';    
