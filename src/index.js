@@ -3062,6 +3062,81 @@ function render() {
 }
 
 // ============================================
+// Staff Management
+// ============================================
+
+function showStaffManagement() {
+  // Create modal for staff management
+  var modal = document.createElement('div');
+  modal.id = 'staffModal';
+  modal.className = 'modal';
+  modal.style.display = 'block';
+  
+  var html = '<div class="modal-content" style="max-width: 700px; width: 90%;">';
+  html += '<div class="modal-header">';
+  html += '<h3>👥 员工管理</h3>';
+  html += '<span class="modal-close" onclick="closeStaffModal()">&times;</span>';
+  html += '</div>';
+  html += '<div id="staffModalBody">';
+  html += '<div style="margin-bottom: 15px;">';
+  html += '<button class="btn btn-primary" onclick="showAddStaffForm()">+ 添加员工</button>';
+  html += '<span id="staffMsg" style="margin-left: 15px; font-size: 14px;"></span>';
+  html += '</div>';
+  html += '<div id="staffTableContainer">';
+  html += '<div style="text-align:center;padding:20px;">加载中...</div>';
+  html += '</div>';
+  html += '</div>';
+  html += '</div>';
+  
+  modal.innerHTML = html;
+  document.body.appendChild(modal);
+  
+  // Load staff data
+  loadStaffData();
+}
+
+function closeStaffModal() {
+  var modal = document.getElementById('staffModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+function loadStaffData() {
+  fetch("/api/get-agents?all=true")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success) {
+        renderStaffTable(data.agents || []);
+      } else {
+        document.getElementById('staffTableContainer').innerHTML = 
+          '<div style="color:red">加载失败: ' + (data.error || '未知错误') + '</div>';
+      }
+    })
+    .catch(function(err) {
+      document.getElementById('staffTableContainer').innerHTML = 
+        '<div style="color:red">网络错误: ' + err.message + '</div>';
+    });
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ============================================
 // Google Sheet Reinstatement
 // ============================================
 function exportToGoogleSheets() {
