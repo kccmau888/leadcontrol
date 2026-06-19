@@ -90,6 +90,119 @@ export default {
     }
   };
 
+  async function handleAddAgent(request, env) {
+  try {
+    const { agent_name, phone_number, dingtalk_id } = await request.json();
+    
+    if (!agent_name || !phone_number) {
+      return new Response(JSON.stringify({ success: false, error: '姓名和电话为必填项' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const stmt = await env.lead_db.prepare(`
+      INSERT INTO agents (agent_name, phone_number, dingtalk_id, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))
+    `);
+    
+    const result = await stmt.bind(agent_name, phone_number, dingtalk_id || null).run();
+    
+    return new Response(JSON.stringify({
+      success: true,
+      id: result.meta.last_row_id,
+      message: '员工添加成功'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function handleUpdateAgent(request, env) {
+  try {
+    const { id, agent_name, phone_number, dingtalk_id } = await request.json();
+    
+    if (!id || !agent_name || !phone_number) {
+      return new Response(JSON.stringify({ success: false, error: 'ID、姓名和电话为必填项' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const stmt = await env.lead_db.prepare(`
+      UPDATE agents 
+      SET agent_name = ?, phone_number = ?, dingtalk_id = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `);
+    
+    const result = await stmt.bind(agent_name, phone_number, dingtalk_id || null, id).run();
+    
+    if (result.meta.rows_written === 0) {
+      return new Response(JSON.stringify({ success: false, error: '未找到该员工' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: '员工更新成功'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+async function handleToggleAgentStatus(request, env) {
+  try {
+    const { id, is_active } = await request.json();
+    
+    if (!id) {
+      return new Response(JSON.stringify({ success: false, error: '缺少ID' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    const stmt = await env.lead_db.prepare(`
+      UPDATE agents 
+      SET is_active = ?, updated_at = datetime('now')
+      WHERE id = ?
+    `);
+    
+    const result = await stmt.bind(is_active, id).run();
+    
+    if (result.meta.rows_written === 0) {
+      return new Response(JSON.stringify({ success: false, error: '未找到该员工' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    
+    return new Response(JSON.stringify({
+      success: true,
+      message: '状态更新成功'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
 async function handleExportReinstatementToSheets(request, env) {
   try {
     const { leads } = await request.json();
@@ -3072,7 +3185,7 @@ function showStaffManagement() {
   modal.className = 'modal';
   modal.style.display = 'block';
   
-  var html = '<div class="modal-content" style="max-width: 700px; width: 90%;">';
+  var html = '<div class="modal-content" style="max-width: 900px; width: 95%;">';
   html += '<div class="modal-header">';
   html += '<h3>👥 员工管理</h3>';
   html += '<span class="modal-close" onclick="closeStaffModal()">&times;</span>';
