@@ -1298,6 +1298,7 @@ async function handleGetReinstatementLeads(request, env) {
               click_type,
               created_at,
               value,
+  						time_to_conversion,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY time_to_conversion DESC) as rn_tc,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at ASC) as rn_asc,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY value DESC) as rn_val
