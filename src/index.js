@@ -798,37 +798,50 @@ async function handleGetAgents(request, env) {
 // ============================================
 // Admin Login
 // ============================================
-
 async function handleAdminLogin(request, env) {
   try {
     const { phone, password } = await request.json();
-    const ADMIN_PASSWORD = env.ADMIN_PASSWORD || 'admin123';
     
-    if (password !== ADMIN_PASSWORD) {
+    // Check password first
+    if (password !== env.admin_password) {
       return new Response(JSON.stringify({ success: false, error: '密码错误' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
     
-    let adminPhones = [];
-    try {
-      const adminsJson = await env.AGENT_PHONE_MAP.get('admins');
-      if (adminsJson) adminPhones = JSON.parse(adminsJson);
-    } catch (e) {}
+    // Check if phone exists in agents table with admin = 1
+    const stmt = await env.lead_db.prepare(`
+      SELECT phone_number, agent_name 
+      FROM agents 
+      WHERE admin = 1 AND phone_number = ?
+    `);
     
-    if (!adminPhones.includes(phone)) {
-      return new Response(JSON.stringify({ success: false, error: '手机号不在管理员列表中' }), {
+    const result = await stmt.bind(phone).first();
+    
+    if (!result) {
+      return new Response(JSON.stringify({ 
+        success: false, 
+        error: '手机号不是管理员' 
+      }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
       });
     }
     
+    // Success - generate token
     const token = btoa(phone + ':' + Date.now());
-    return new Response(JSON.stringify({ success: true, token: token, phone: phone }), {
+    return new Response(JSON.stringify({ 
+      success: true, 
+      token: token, 
+      phone: phone,
+      agent_name: result.agent_name  // Return the agent name
+    }), {
       headers: { 'Content-Type': 'application/json' }
     });
+    
   } catch (error) {
+    console.error('Admin login error:', error);
     return new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
