@@ -1298,6 +1298,7 @@ async function handleGetReinstatementLeads(request, env) {
               click_type,
               created_at,
               value,
+              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY time_to_conversion DESC) as rn_tc,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at ASC) as rn_asc,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY value DESC) as rn_val
           FROM leads
@@ -1311,6 +1312,7 @@ async function handleGetReinstatementLeads(request, env) {
       )
       SELECT 
           L.client_id,
+          MAX(CASE WHEN L.rn_tc = 1 THEN L.time_to_conversion END) as time_to_conversion,
           MAX(CASE WHEN L.rn_asc = 1 THEN L.click_type END) as click_type,
           MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END) as latest_created_at,
           CAST(julianday('now') - julianday(MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END)) AS INTEGER) as days_since_creation,
@@ -2918,6 +2920,7 @@ function renderReinstatementTable() {
   h += "<thead><tr style='background:#f8f9fa'>";
   h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'><input type='checkbox' id='selectAllRein' onchange='toggleSelectAllRein()'></th>";
   h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>客户号</th>"; 
+  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>最长转化时间</th>";   
   h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>转化价值</th>";
   h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>点击类型</th>";
   h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>创建日期</th>";
@@ -2941,6 +2944,7 @@ function renderReinstatementTable() {
     h += "<tr style='background:" + rowBg + "'>";
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td>";
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td>";
+    h += "<td style='padding:12px;border-bottom:1px solid #eee'>$" + (ld.time_to_conversion || "-") + "</td>";   
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td>";
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + clickType + "</td>";
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + (createdDate ? createdDate.substring(0,10) : "-") + "</td>";
