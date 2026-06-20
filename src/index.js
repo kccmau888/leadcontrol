@@ -1371,6 +1371,7 @@ async function handleGetReinstatementLeads(request, env) {
         verified_at: lead.latest_verified_at,
         created_at: lead.latest_created_at,
         click_type: lead.click_type || 'unknown',
+        time_to_conversion: lead.time_to_conversion,
         days_since_creation: daysSinceCreation,
         is_qualified: true,
         reinstatement_submitted: 0
@@ -2945,7 +2946,7 @@ function renderReinstatementTable() {
     h += "<tr style='background:" + rowBg + "'>";
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td>";
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td>";
-    h += "<td style='padding:12px;border-bottom:1px solid #eee'>$" + (ld.time_to_conversion || "-") + "</td>";   
+    h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.time_to_conversion || "-") + "</td>";   
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td>";
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + clickType + "</td>";
     h += "<td style='padding:12px;border-bottom:1px solid #eee'>" + (createdDate ? createdDate.substring(0,10) : "-") + "</td>";
