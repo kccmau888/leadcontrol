@@ -801,9 +801,10 @@ async function handleGetAgents(request, env) {
 async function handleAdminLogin(request, env) {
   try {
     const { phone, password } = await request.json();
-    
+    const storedPassword = await env.AGENT_PHONE_MAP.get("admin_password");    
+
     // Check password first
-    if (password !== env.admin_password) {
+    if (password !== storedPassword) {
       return new Response(JSON.stringify({ success: false, error: '密码错误' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' }
