@@ -521,11 +521,12 @@ async function handleCombinedConversionStats(env, request) {
     }
     
     // Define categories in order
-    const categories = ['-', '0', '>0'];
+    const categories = ['-', '1', '0', '>0'];
     const categoryLabels = {
       '-': '未验证',
+      '1': 'No Show',
       '0': '无关查询',
-      '>0': '有效查询'
+      '>1': '有效查询'
     };
     
     const stats = [];
@@ -2635,7 +2636,8 @@ function updateLead(id) {
   
   var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : '已验证');
   var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
-  if (value !== null && value > 0) confirmMsg += '\\n转化价值: ' + value;
+  if (value !== null && value > 1) confirmMsg += '\\n转化价值: ' + value;
+  else if (value !== null && value = 1) confirmMsg += 'No Show';
   else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
   if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
   
