@@ -1,6 +1,6 @@
 export default {
   async fetch(request, env, ctx) {
-    // Handle favicon 2
+    // Handle favicon
     if (request.method === 'GET' && new URL(request.url).pathname === '/favicon.ico') {
       return new Response(null, { status: 204 });
     }
@@ -428,6 +428,9 @@ async function getGoogleAccessToken(serviceAccountJson) {
   }
 }
 
+// ============================================
+// Combined Conversion Stats (MODIFIED - Added No Show)
+// ============================================
 async function handleCombinedConversionStats(env, request) {
   try {
     const url = new URL(request.url);
@@ -449,7 +452,7 @@ async function handleCombinedConversionStats(env, request) {
       params.push(dateTo);
     }
     
-    // Paid stats query (with gclid)
+    // Paid stats query (with gclid) - MODIFIED: Added '1' case for No Show
     const paidSql = `
       WITH paid AS (
         SELECT value AS ConvValue
@@ -466,6 +469,7 @@ async function handleCombinedConversionStats(env, request) {
         CASE 
           WHEN ConvValue IS NULL THEN '-'
           WHEN ConvValue = '0' THEN '0'
+          WHEN ConvValue = '1' THEN '1'
           ELSE '>0'
         END AS Conversion_Category,
         COUNT(*) AS Record_Count
@@ -473,7 +477,7 @@ async function handleCombinedConversionStats(env, request) {
       GROUP BY Conversion_Category
     `;
     
-    // Non-paid stats query (no gclid)
+    // Non-paid stats query (no gclid) - MODIFIED: Added '1' case for No Show
     const nonpaidSql = `
       WITH nonpaid AS (
         SELECT value AS ConvValue
@@ -490,6 +494,7 @@ async function handleCombinedConversionStats(env, request) {
         CASE 
           WHEN ConvValue IS NULL THEN '-'
           WHEN ConvValue = '0' THEN '0'
+          WHEN ConvValue = '1' THEN '1'
           ELSE '>0'
         END AS Conversion_Category,
         COUNT(*) AS Record_Count
@@ -520,11 +525,12 @@ async function handleCombinedConversionStats(env, request) {
       nonpaidTotal += row.Record_Count;
     }
     
-    // Define categories in order
-    const categories = ['-', '0', '>0'];
+    // Define categories in order - MODIFIED: Added '1'
+    const categories = ['-', '0', '1', '>0'];
     const categoryLabels = {
       '-': '未验证',
       '0': '无关查询',
+      '1': 'No Show',
       '>0': '有效查询'
     };
     
@@ -893,7 +899,7 @@ async function handleGetClientLeads(request, env) {
 }
 
 // ============================================
-// Admin Get Leads
+// Admin Get Leads (MODIFIED - Added No Show filter support)
 // ============================================
 
 async function handleAdminGetLeads(request, env) {
@@ -905,6 +911,7 @@ async function handleAdminGetLeads(request, env) {
     const offset = (page - 1) * limit;
     
     const status = url.searchParams.get('status') || '';
+    const noshow = url.searchParams.get('noshow') === 'true';
     const agent = url.searchParams.get('agent') || '';
     const trafficType = url.searchParams.get('traffic_type') || '';
     const dateFrom = url.searchParams.get('date_from') || '';
@@ -920,6 +927,9 @@ async function handleAdminGetLeads(request, env) {
     if (status) {
       whereConditions.push('status = ?');
       params.push(status);
+    }
+    if (noshow) {
+      whereConditions.push('value = 1');
     }
     if (agent) {
       whereConditions.push('agent_name = ?');
@@ -1049,13 +1059,15 @@ async function handleAdminBatchUpdate(request, env) {
           value = null; 
         } else if (value === 0) { 
           newStatus = 'rejected'; 
+        } else if (value === 1) {
+          newStatus = 'noshow';
         } else { 
           newStatus = 'verified'; 
         }
         
         let updateStmt, params;
         
-        if (newStatus === 'verified') {
+        if (newStatus === 'verified' || newStatus === 'noshow') {
           updateStmt = await env.lead_db.prepare(`
             UPDATE leads 
             SET status = ?, 
@@ -1139,7 +1151,7 @@ async function handleAdminBatchUpdate(request, env) {
 }
 
 // ============================================
-// Admin Export
+// Admin Export (MODIFIED - Added No Show to CSV)
 // ============================================
 
 async function handleAdminExport(request, env) {
@@ -1177,6 +1189,15 @@ async function handleAdminExport(request, env) {
     const result = await stmt.bind(...params).all();
     const leads = result.results;
     
+    // Helper function to get status label
+    function getStatusLabel(status, value) {
+      if (status === 'pending') return '待处理';
+      if (value === 0) return '已拒绝';
+      if (value === 1) return 'No Show';
+      if (value > 1) return '已验证';
+      return status || '-';
+    }
+    
     const headers = ['ID', '客户号', '代理', '点击类型', '租金', '区域', '物业类型', 
                      'UTM来源', 'UTM媒介', 'Campaign', 'GCLID', '流量类型',
                      '预算', '价值', '状态', '处理人', '创建时间', '处理时间', '交易类型'];
@@ -1199,7 +1220,7 @@ async function handleAdminExport(request, env) {
         '"' + (lead.traffic_type || '') + '"',
         '"' + (lead.budget_range || '') + '"',
         (lead.value === null || lead.value === undefined) ? '-' : lead.value,
-        lead.status || '',
+        getStatusLabel(lead.status, lead.value),
         '"' + (lead.verified_by || '') + '"',
         lead.created_at || '',
         lead.time_to_conversion || '',
@@ -1312,7 +1333,7 @@ async function handleGetReinstatementLeads(request, env) {
               click_type,
               created_at,
               value,
-  						time_to_conversion,
+              time_to_conversion,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY time_to_conversion DESC) as rn_tc,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at ASC) as rn_asc,
               ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY value DESC) as rn_val
@@ -1335,40 +1356,6 @@ async function handleGetReinstatementLeads(request, env) {
       FROM RankedLeads L
       GROUP BY L.client_id;
     `;
-
-      let sql_backup = `
-      WITH RankedLeads AS (
-          SELECT 
-              client_id,
-              gclid,
-              click_type,
-              created_at,
-              value,
-              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY created_at ASC) as rn_asc,
-              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY value DESC) as rn_val,
-              
-              -- NEW WINDOW FUNCTION: Flags '1' for ALL rows of a client if ANY row is > 1 mins
-              MAX(CASE WHEN time_to_conversion > '00:01:00' THEN 1 ELSE 0 END) 
-                  OVER (PARTITION BY client_id) as client_has_long_record
-          FROM leads
-          WHERE gclid IS NOT NULL 
-            AND gclid <> ''
-            AND client_id IS NOT NULL 
-            AND client_id <> 'unknown' 
-            AND value IS NOT NULL
-            AND (reinstatement_submitted_at IS NULL OR datetime(reinstatement_submitted_at) < datetime('now', '-90 days'))
-            AND datetime(created_at) BETWEEN datetime('now', '-90 days') AND datetime('now', '-1 days')
-      )
-      SELECT 
-          L.client_id,
-          MAX(CASE WHEN L.rn_asc = 1 THEN L.click_type END) as click_type,
-          MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END) as latest_created_at,
-          CAST(julianday('now') - julianday(MAX(CASE WHEN L.rn_asc = 1 THEN L.created_at END)) AS INTEGER) as days_since_creation,
-          MAX(CASE WHEN L.rn_val = 1 THEN L.value END) as ConvValue
-      FROM RankedLeads L
-      WHERE NOT (L.value = 0 AND L.client_has_long_record = 1)
-      GROUP BY L.client_id;
-      `;
 
     const stmt = await env.lead_db.prepare(sql);
     const result = await stmt.all();
@@ -1420,17 +1407,14 @@ async function handleGetReinstatementLeads(request, env) {
 async function handleConversionTrend(env, request) {
   try {
     const url = new URL(request.url);
-    let dateFrom = url.searchParams.get('date_from') || ''; // Expects 'YYYY-MM-DD'
-    let dateTo = url.searchParams.get('date_to') || '';     // Expects 'YYYY-MM-DD'
+    let dateFrom = url.searchParams.get('date_from') || '';
+    let dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
     
     let dateCondition = '';
     let params = [];
     
-    // Pass raw 'YYYY-MM-DD' to SQL. SQLite will handle the local +8 hours conversion safely.
     if (dateFrom && dateTo) {
-      dateCondition = "WHERE hk_created_at >= ? AND hk_created_at <= ? * 1 || ' 23:59:59'"; 
-      // A cleaner SQLite approach is matching string boundaries:
       dateCondition = "WHERE date(hk_created_at) >= ? AND date(hk_created_at) <= ?";
       params.push(dateFrom, dateTo);
     } else if (dateFrom) {
@@ -1449,13 +1433,10 @@ async function handleConversionTrend(env, request) {
       case 'month':
         dateFormat = `strftime('%Y-%m', hk_created_at)`;
         break;
-      default: // day
+      default:
         dateFormat = `date(hk_created_at)`;
     }
     
-    // 1. Convert UTC to HK time zone first for uniform evaluation
-    // 2. Perform deduplication via ROW_NUMBER
-    // 3. Filter by date and group by period smoothly
     const sql = `
       WITH converted_leads AS (
         SELECT 
@@ -1463,7 +1444,7 @@ async function handleConversionTrend(env, request) {
           datetime(created_at, '+8 hours') as hk_created_at,
           ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
         FROM leads
-        WHERE value > 0
+        WHERE value > 1
       ),
       filtered_conversions AS (
         SELECT * 
@@ -1521,133 +1502,8 @@ async function handleConversionTrend(env, request) {
   }
 }
 
-async function handleConversionTrend_old(env, request) {
-  try {
-    const url = new URL(request.url);
-    let dateFrom = url.searchParams.get('date_from') || '';
-    let dateTo = url.searchParams.get('date_to') || '';
-    const groupBy = url.searchParams.get('group_by') || 'day';
-    
-    // Convert HK date range to UTC for filtering (subtract 8 hours)
-    function hkDateToUTC(dateStr, isEndOfDay = false) {
-      if (!dateStr) return null;
-      const [year, month, day] = dateStr.split('-').map(Number);
-      
-      let utcDate;
-      if (isEndOfDay) {
-        // HK 23:59:59 -> UTC 15:59:59
-        utcDate = new Date(Date.UTC(year, month-1, day, 15, 59, 59));
-      } else {
-        // HK 00:00:00 -> UTC 16:00:00 (previous day)
-        utcDate = new Date(Date.UTC(year, month-1, day - 1, 16, 0, 0));
-      }
-      
-      return utcDate.toISOString().slice(0, 19).replace('T', ' ');
-    }
-    
-    let dateCondition = '';
-    let params = [];
-    
-    if (dateFrom && dateTo) {
-      dateCondition = ' AND created_at >= ? AND created_at <= ?';
-      params.push(
-        hkDateToUTC(dateFrom, false),
-        hkDateToUTC(dateTo, true)
-      );
-    } else if (dateFrom) {
-      dateCondition = ' AND created_at >= ?';
-      params.push(hkDateToUTC(dateFrom, false));
-    } else if (dateTo) {
-      dateCondition = ' AND created_at <= ?';
-      params.push(hkDateToUTC(dateTo, true));
-    }
-    
-    // Group by HK time - ADD 8 HOURS to convert UTC to HK time
-    let dateFormat, orderBy;
-    switch (groupBy) {
-      case 'week':
-        dateFormat = `strftime('%Y', datetime(created_at, '+8 hours')) || '-W' || strftime('%W', datetime(created_at, '+8 hours'))`;
-        orderBy = `min(datetime(created_at, '+8 hours'))`;
-        break;
-      case 'month':
-        dateFormat = `strftime('%Y-%m', datetime(created_at, '+8 hours'))`;
-        orderBy = `min(datetime(created_at, '+8 hours'))`;
-        break;
-      default: // day
-        dateFormat = `date(datetime(created_at, '+8 hours'))`;
-        orderBy = `date(datetime(created_at, '+8 hours'))`;
-    }
-    
-    const sql = `
-      WITH valid_conversions AS (
-        SELECT 
-          created_at,
-          gclid,
-          client_id,
-          verified_at,
-          ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
-        FROM leads
-        WHERE value > 0
-          ${dateCondition}
-      )
-      SELECT 
-        ${dateFormat} as period,
-        SUM(CASE WHEN (gclid IS NOT NULL AND gclid != '') THEN 1 ELSE 0 END) as paid_count,
-        SUM(CASE WHEN (gclid IS NULL OR gclid = '') THEN 1 ELSE 0 END) as organic_count
-      FROM valid_conversions
-      WHERE rn = 1
-      GROUP BY period
-      ORDER BY ${orderBy} ASC
-    `;
-    
-    const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.bind(...params).all();
-    
-    const periods = [];
-    const paidCounts = [];
-    const organicCounts = [];
-    
-    for (const row of result.results) {
-      let displayPeriod = row.period;
-      
-      if (groupBy === 'week') {
-        const match = row.period.match(/(\d{4})-W(\d+)/);
-        if (match) {
-          displayPeriod = `${match[1]} Week ${match[2]}`;
-        }
-      } else if (groupBy === 'month') {
-        const match = row.period.match(/(\d{4})-(\d{2})/);
-        if (match) {
-          displayPeriod = `${match[1]}-${match[2]}`;
-        }
-      }
-      
-      periods.push(displayPeriod);
-      paidCounts.push(row.paid_count);
-      organicCounts.push(row.organic_count);
-    }
-    
-    return new Response(JSON.stringify({
-      success: true,
-      periods: periods,
-      paid: paidCounts,
-      organic: organicCounts,
-      groupBy: groupBy
-    }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-  } catch (error) {
-    console.error('Conversion trend error:', error);
-    return new Response(JSON.stringify({ success: false, error: error.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
-
 // ============================================
-// HTML Page
+// HTML Page - Complete with all modifications
 // ============================================
 
 async function handleAdminPage(env) {
@@ -1675,29 +1531,26 @@ async function handleAdminPage(env) {
     .table-wrapper { overflow-x: auto; overflow-y: visible; width: 100%; -webkit-overflow-scrolling: touch;}
     .wrap-text { word-wrap: break-word; white-space: normal; word-break: break-word; max-width: 250px; }
     table { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; min-width: 1300px; }
-    th, td { padding: 4px 8px; text-align: left; white-space: nowrap; }  /* Reduced from 12px to 4px */
+    th, td { padding: 4px 8px; text-align: left; white-space: nowrap; }
     th { background: #f8f9fa; position: sticky; top: 0; }
 
     .first-row td {
-    border-bottom: none !important;  /* Remove bottom border */
-    padding: 4px 8px !important;     /* Short height */
+    border-bottom: none !important;
+    padding: 4px 8px !important;
     }
 
-    /* Second row - no borders, shorter, smaller font */
     .second-row td {
-        border: none !important;         /* No borders at all */
-        padding: 2px 8px 4px 8px !important;  /* Even shorter */
-        font-size: 14px;                /* Smaller font */
-        color: #666;                    /* Gray color */
+        border: none !important;
+        padding: 2px 8px 4px 8px !important;
+        font-size: 14px;
+        color: #666;
         background-color: transparent !important;
     }
 
-    /* Add border between records (after second row) */
     .second-row td {
-        border-bottom: 1px solid #eee !important;  /* Keep this for separation between records */
+        border-bottom: 1px solid #eee !important;
     }
 
-    /* Buttons */
     .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; margin-right: 10px; }
     .btn-primary { background: #667eea; color: white; }
     .btn-danger { background: #dc3545; color: white; }
@@ -1705,13 +1558,11 @@ async function handleAdminPage(env) {
     .btn-warning { background: #ffc107; color: #333; }
     .btn-small { padding: 6px 12px; font-size: 12px; }
     
-    /* Filters */
     .filters { margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; background: white; padding: 15px; border-radius: 8px; }
     .filter-group { display: flex; flex-direction: column; }
     .filter-group label { font-size: 12px; margin-bottom: 4px; }
     .filter-group select, .filter-group input { padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
     
-    /* Form Elements */
     .status-input { padding: 6px 12px; border-radius: 20px; border: none; font-size: 12px; font-weight: bold; text-align: center; width: 80px; cursor: default; background-color: #e9ecef; }
     .budget-select { padding: 6px; border-radius: 4px; border: 1px solid #ddd; min-width: 120px; }
     .tx-type-select { padding: 6px; border-radius: 4px; border: 1px solid #ddd; width: 70px; min-width: 70px; }
@@ -1724,7 +1575,6 @@ async function handleAdminPage(env) {
     .frozen-row td { background-color: #d3d3d3; }
     select:disabled, input:disabled, button:disabled { cursor: not-allowed; opacity: 0.6; }
     
-    /* Modal */
     .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
     .modal-content { position: relative; background: white; margin: 50px auto; padding: 20px; width: 80%; max-width: 900px; border-radius: 12px; max-height: 80%; overflow: auto; }
     .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #eee; }
@@ -1737,8 +1587,8 @@ async function handleAdminPage(env) {
     .status-pending-small { background: #ffc107; color: #856404; }
     .status-verified-small { background: #28a745; color: white; }
     .status-rejected-small { background: #dc3545; color: white; }
+    .status-noshow-small { background: #6c757d; color: white; }
     
-    /* Layout */
     .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
     .button-bar { display: flex; justify-content: flex-end; gap: 10px; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #e0e0e0; }
    .stats-and-hotline-row {
@@ -1771,11 +1621,10 @@ async function handleAdminPage(env) {
     .hotline-item button { margin-left: 10px; white-space: nowrap; }
     .hotline-msg { font-size: 12px; margin-left: 10px; }
     
-    /* Verified By Select */
     .verified-by-select { padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd; min-width: 100px; font-size: 12px; }
     
 .combined-stats-container {
-    width: 320px;
+    width: 340px;
     flex-shrink: 0;
     background: white;
     border-radius: 12px;
@@ -1920,6 +1769,7 @@ var agentsList = [];
 var conversionChart = null;
 var currentGroupBy = 'day';
 
+// MODIFIED: Added '1' option for No Show
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
   { value: '1', label: 'No Show', isZero: false },
@@ -1931,6 +1781,7 @@ var rentBudgetOptions = [
   { value: 'above_160k', label: 'Above 16萬', isZero: false }
 ];
 
+// MODIFIED: Added '1' option for No Show
 var buyBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
   { value: '1', label: 'No Show', isZero: false },
@@ -1955,13 +1806,11 @@ function formatCurrency(amount) {
   if (!amount || amount === '-' || amount === '' || amount === 'null' || amount === 'undefined') {
     return '-';
   }
-  // Remove any non-numeric characters (except decimal point)
   var cleanAmount = String(amount).replace(/[^0-9.]/g, '');
   var num = parseFloat(cleanAmount);
   if (isNaN(num) || num === 0) {
     return '-';
   }
-  // Format as HKD with comma separators
   return '$' + num.toLocaleString('en-HK', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0
@@ -2098,19 +1947,16 @@ function loadAgents() {
 }
 
 function exportAllLeads() {
-  // Show loading indicator
   var originalText = event.target.innerText;
   event.target.innerText = '导出中...';
   event.target.disabled = true;
   
-  // Fetch all leads without any filters
   fetch('/api/export?all=true')
     .then(function(response) {
       if (!response.ok) throw new Error('导出失败');
       return response.blob();
     })
     .then(function(blob) {
-      // Create download link
       var url = window.URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
@@ -2120,7 +1966,6 @@ function exportAllLeads() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
       
-      // Reset button
       event.target.innerText = originalText;
       event.target.disabled = false;
     })
@@ -2131,13 +1976,14 @@ function exportAllLeads() {
     });
 }
 
+// MODIFIED: Added No Show filter option
 function loadFilters() {
   fetch('/api/leads?limit=1')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success && data.filters) {
         var html = '<div class="filters">';
-        html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option></select></div>';
+        html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">No Show</option></select></div>';
         html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
         for (var i = 0; i < data.filters.agents.length; i++) {
           html += '<option value="' + data.filters.agents[i] + '">' + data.filters.agents[i] + '</option>';
@@ -2160,20 +2006,34 @@ function loadFilters() {
     });
 }
 
+// MODIFIED: Handle No Show filter
 function applyFilters() {
-  currentFilters = {
-    status: document.getElementById('filterStatus').value,
-    agent: document.getElementById('filterAgent').value,
-    traffic_type: document.getElementById('filterTraffic').value,
-    date_from: document.getElementById('filterDateFrom').value,
-    date_to: document.getElementById('filterDateTo').value,
-    search: document.getElementById('filterSearch').value
-  };
+  var statusValue = document.getElementById('filterStatus').value;
+  if (statusValue === 'noshow') {
+    currentFilters = {
+      status: '',
+      noshow: 'true',
+      agent: document.getElementById('filterAgent').value,
+      traffic_type: document.getElementById('filterTraffic').value,
+      date_from: document.getElementById('filterDateFrom').value,
+      date_to: document.getElementById('filterDateTo').value,
+      search: document.getElementById('filterSearch').value
+    };
+  } else {
+    currentFilters = {
+      status: statusValue,
+      agent: document.getElementById('filterAgent').value,
+      traffic_type: document.getElementById('filterTraffic').value,
+      date_from: document.getElementById('filterDateFrom').value,
+      date_to: document.getElementById('filterDateTo').value,
+      search: document.getElementById('filterSearch').value
+    };
+  }
   currentPage = 1;
   selectedLeads.clear();
   loadLeads();
   loadCombinedConversionStats();
-loadConversionTrend();
+  loadConversionTrend();
 }
 
 function resetFilters() {
@@ -2195,6 +2055,7 @@ function resetFilters() {
 function loadLeads() {
   var url = '/api/leads?page=' + currentPage + '&limit=20';
   if (currentFilters.status) url += '&status=' + currentFilters.status;
+  if (currentFilters.noshow) url += '&noshow=' + currentFilters.noshow;
   if (currentFilters.agent) url += '&agent=' + currentFilters.agent;
   if (currentFilters.traffic_type) url += '&traffic_type=' + currentFilters.traffic_type;
   if (currentFilters.date_from) url += '&date_from=' + currentFilters.date_from;
@@ -2222,6 +2083,7 @@ function cutUrlBeforeQuestionMark(url) {
     return url.split('?')[0];
 }
 
+// MODIFIED: Added No Show status display in table
 function renderTable(leads) {
   var container = document.getElementById('tablePanel');
   if (!leads || leads.length === 0) {
@@ -2245,9 +2107,8 @@ function renderTable(leads) {
 
     var isRent = true;
     if (lead.budget_range && lead.budget_range !== '' && lead.budget_range !== null) {
-      isRent = !lead.budget_range.includes('m') && lead.budget_range !== '0';
+      isRent = !lead.budget_range.includes('m') && lead.budget_range !== '0' && lead.budget_range !== '1';
     }
-    var transactionTypeDisplay = isRent ? '租用' : '购买';
     var budgetOptions = isRent ? rentBudgetOptions : buyBudgetOptions;
     var currentBudget = lead.budget_range || '';
     
@@ -2260,6 +2121,9 @@ function renderTable(leads) {
       displayPlaceholder = '-';
     } else if (currentValue === 0) {
       displayValue = '0';
+      displayPlaceholder = '';
+    } else if (currentValue === 1) {
+      displayValue = '1';
       displayPlaceholder = '';
     } else {
       displayValue = currentValue;
@@ -2278,8 +2142,8 @@ function renderTable(leads) {
       statusBg = '#dc3545';
       statusColor = 'white';
     } else if (currentValue === 1) {
-      statusText = 'No Show';  // 新增
-      statusBg = '#888e53';    // 灰色
+      statusText = 'No Show';
+      statusBg = '#6c757d';
       statusColor = 'white';
     } else {
       statusText = '已验证';
@@ -2312,7 +2176,6 @@ function renderTable(leads) {
     html += '<td>' + (lead.campaign_name || '-') + '</td>'; 
     html += '<td><input type="text" id="status_' + lead.id + '" value="' + statusText + '" disabled class="status-input" style="background-color:' + statusBg + ';color:' + statusColor + ';"></td>';
 
-    // Budget dropdown
     html += '<td><select id="budget_' + lead.id + '" class="budget-select" data-original-budget="' + (currentBudget && currentBudget !== '' ? escapeHtml(currentBudget) : '') + '" onchange="updateValueFromBudget(' + lead.id + ')" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="">请选择</option>';
     for (var j = 0; j < budgetOptions.length; j++) {
@@ -2323,7 +2186,6 @@ function renderTable(leads) {
     html += '</select></td>';
     html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
     html += '<td>' + new Date(lead.created_at).toLocaleString() + '</td>';
-    // 验证人 dropdown
     html += '<td><select id="verified_by_' + lead.id + '" class="verified-by-select" data-lead-id="' + lead.id + '" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="">-</option>';
     for (var a = 0; a < agentsList.length; a++) {
@@ -2361,7 +2223,7 @@ function renderTable(leads) {
 
 function isFrozen(clientId, currentStatus, verifiedClientIdsList) {
   if (!clientId || clientId === '-') return false;
-  if (currentStatus === 'verified') return false;
+  if (currentStatus === 'verified' || currentStatus === 'noshow') return false;
   return verifiedClientIdsList.indexOf(clientId) !== -1;
 }
 
@@ -2401,6 +2263,9 @@ function showClientLeads(clientId) {
           } else if (lead.status === 'verified') {
             statusText = '已验证';
             statusClass = 'status-verified-small';
+          } else if (lead.status === 'noshow') {
+            statusText = 'No Show';
+            statusClass = 'status-noshow-small';
           } else {
             statusText = '已拒绝';
             statusClass = 'status-rejected-small';
@@ -2442,10 +2307,11 @@ window.onclick = function(event) {
   if (event.target === modal) closeModal();
 };
 
+// MODIFIED: Added support for No Show (value = 1)
 function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
   if (budgetRange === '0') return 0;
   if (budgetRange === '1') return 1;
-
+  
   function extractNumber(str) {
     if (!str || str === '-') return 0;
     var match = str.match(/(\\d+(?:,\\d+)?)/);
@@ -2477,6 +2343,7 @@ function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
   }
 }
 
+// MODIFIED: Added No Show status
 function updateStatusDisplay(statusInput, value) {
   if (value === null || value === undefined || value === '') {
     statusInput.value = '待处理';
@@ -2487,8 +2354,8 @@ function updateStatusDisplay(statusInput, value) {
     statusInput.style.backgroundColor = '#dc3545';
     statusInput.style.color = 'white';
   } else if (value === 1) {
-    statusInput.value = 'No Show';  // 新增
-    statusInput.style.backgroundColor = '#888e53';  // 灰色
+    statusInput.value = 'No Show';
+    statusInput.style.backgroundColor = '#6c757d';
     statusInput.style.color = 'white';
   } else {
     statusInput.value = '已验证';
@@ -2506,7 +2373,6 @@ function updateValueFromBudget(id) {
   
   if (!budgetSelect || !valueInput) return;
   
-  // Get previous value (stored in data attribute)
   var previousBudget = budgetSelect.getAttribute('data-original-budget') || '';
   var currentBudget = budgetSelect.value;
   
@@ -2518,25 +2384,20 @@ function updateValueFromBudget(id) {
   var priceValue = cells[6] ? cells[6].innerText : '';
   var isRent = (txTypeSelect && txTypeSelect.value === 'rent');
   
-  // Check if this is a new selection (was empty, now has value)
   var wasEmpty = (previousBudget === '' || previousBudget === null);
   var isNowSelected = (currentBudget && currentBudget !== '');
   
   if (currentBudget && currentBudget !== '') {
-    // Calculate and update value
     var newValue = calculateValueFromBudget(currentBudget, isRent, rentValue, priceValue);
     valueInput.value = newValue;
     valueInput.placeholder = '';
     valueInput.classList.add('pending-change');
     updateStatusDisplay(statusInput, newValue);
     
-    // Auto-select verified_by ONLY when budget was previously empty and now selected
     if (wasEmpty && isNowSelected) {
-      // Get agent name from the "代理" column (index 3)
       var agentName = cells[3] ? cells[3].innerText.trim() : '';
       
       if (verifiedBySelect && agentName && agentName !== '-' && agentName !== '') {
-        // Find and select the matching agent in the dropdown
         var optionFound = false;
         for (var i = 0; i < verifiedBySelect.options.length; i++) {
           if (verifiedBySelect.options[i].value === agentName) {
@@ -2545,22 +2406,18 @@ function updateValueFromBudget(id) {
             break;
           }
         }
-        // Optional: if agent not found in dropdown, you could add a temporary option
         if (!optionFound) {
           console.log('Agent "' + agentName + '" not found in verified_by dropdown options');
         }
       }
     }
   } else {
-    // Budget was cleared
     valueInput.value = '';
     valueInput.placeholder = '-';
     valueInput.classList.remove('pending-change');
     updateStatusDisplay(statusInput, null);
-    // Do NOT auto-clear verified_by when budget is cleared
   }
   
-  // Store the current budget as the "original" for next time
   budgetSelect.setAttribute('data-original-budget', currentBudget);
 }
 
@@ -2607,18 +2464,12 @@ function onTransactionTypeChange(id) {
   }
 }
 
+// MODIFIED: Added No Show support in update confirmation
 function updateLead(id) {
   var budgetSelect = document.getElementById('budget_' + id);
   var valueInput = document.getElementById('value_' + id);
   var txTypeSelect = document.getElementById('tx_type_' + id);
   var verifiedBySelect = document.getElementById('verified_by_' + id);
-  
-  // Debug: log what we're getting
-  console.log('Updating lead:', id);
-  console.log('Verified by select element:', verifiedBySelect);
-  if (verifiedBySelect) {
-    console.log('Selected verified_by value:', verifiedBySelect.value);
-  }
   
   var budget = budgetSelect ? budgetSelect.value : '';
   var transactionType = txTypeSelect ? txTypeSelect.value : '';
@@ -2627,6 +2478,8 @@ function updateLead(id) {
   
   if (budget === '0') {
     value = 0;
+  } else if (budget === '1') {
+    value = 1;
   } else if (budget && budget !== '') {
     if (valueInput && valueInput.value !== '' && valueInput.placeholder !== '-') {
       value = parseInt(valueInput.value);
@@ -2644,12 +2497,12 @@ function updateLead(id) {
     }
   }
   
-var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : ((value === 1) ? 'No Show' : '已验证'));
-var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
-if (value !== null && value > 1) confirmMsg += '\\n转化价值: ' + value;
-else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
-else if (value === 1) confirmMsg += '\\n此线索将被标记为 No Show';
-if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
+  var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : ((value === 1) ? 'No Show' : '已验证'));
+  var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
+  if (value !== null && value > 1) confirmMsg += '\\n转化价值: ' + value;
+  else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
+  else if (value === 1) confirmMsg += '\\n此线索将被标记为 No Show';
+  if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
   
   if (!confirm(confirmMsg)) return;
   
@@ -2661,7 +2514,7 @@ if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
       budgets: [budget],
       values: [value],
       transactionTypes: [transactionType],
-      verifiedBy: [verifiedBy]  // Make sure this is included
+      verifiedBy: [verifiedBy]
     })
   })
   .then(function(r) { return r.json(); })
@@ -2676,7 +2529,6 @@ if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
     alert('网络错误: ' + err.message);
   });
 }
-
 
 function renderPagination(pagination) {
   var container = document.getElementById('paginationPanel');
@@ -2728,7 +2580,6 @@ function loadAllHotlineSelections() {
         var html = '';
         for (var i = 0; i < data.agents.length; i++) {
           var agent = data.agents[i];
-          // 新格式：存储 ["agent_name", "dingtalk_id"]
           var optionValue = JSON.stringify([agent.agent_name, agent.dingtalk_id]);
           var displayText = agent.agent_name + ' (' + agent.phone_number + ')';
           html += '<option value="' + optionValue.replace(/"/g, '&quot;') + '">' + escapeHtml(displayText) + '</option>';
@@ -2800,7 +2651,6 @@ function selectValueFromKV(select, savedValue) {
       var savedParsed = JSON.parse(savedValue);
       var optionParsed = JSON.parse(optionValue);
       
-      // 比较 dingtalk_id（数组第二个元素）
       if (savedParsed[1] === optionParsed[1]) {
         select.selectedIndex = i;
         break;
@@ -2890,13 +2740,11 @@ function showReinstatementPage() {
 }
 
 function hideReinstatementPage() {
-  // Clear the reinstatement data
   selectedReinIds.clear();
   reinstatementLeads = [];
-  
-  // Call the main render function to show admin page
   render();
 }
+
 function loadReinstatementLeads() {
   selectedReinIds.clear();
   
@@ -3026,11 +2874,10 @@ function showSubmissionDetails(selectedLeadsData, callback) {
   content += '<strong>提交时间:</strong> ' + new Date().toLocaleString() + '<br>';
   content += '</div>';
   
-  // Table with inline styles that override global CSS
   content += '<div style="overflow-x:auto;max-height:350px;overflow-y:auto;margin-bottom:15px">';
   content += '<table style="width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;min-width:0">';
 content += '<thead>';
-content += '<tr style="background:#0d1117;color:#8b949e">';  // Changed from white to light gray
+content += '<tr style="background:#0d1117;color:#8b949e">';
 content += '<th style="padding:8px;border:1px solid #333;text-align:left;width:40%">客户号</th>';
 content += '<th style="padding:8px;border:1px solid #333;text-align:center;width:20%">价值</th>';
 content += '<th style="padding:8px;border:1px solid #333;text-align:center;width:20%">类型</th>';
@@ -3115,8 +2962,8 @@ function logout() {
   render();
 }
 
+// MODIFIED: Added No Show support in combined stats display
 function loadCombinedConversionStats() {
-  // Read the existing date filter values from the admin page
   var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
   var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
   
@@ -3143,12 +2990,20 @@ function loadCombinedConversionStats() {
         
         for (var i = 0; i < data.stats.length; i++) {
           var stat = data.stats[i];
-          html += '<div class="combined-stats-row">';
+          var rowClass = '';
+          if (stat.category === '1') {
+            rowClass = ' style="background-color:#f8f9fa; border-left: 3px solid #6c757d;"';
+          }
+          html += '<div class="combined-stats-row"' + rowClass + '>';
           html += '<span class="combined-stats-row-label">' + stat.label + '</span>';
           html += '<span class="combined-stats-row-paid">' + stat.paid_count + ' (' + stat.paid_percent + ')</span>';
           html += '<span class="combined-stats-row-nonpaid">' + stat.nonpaid_count + ' (' + stat.nonpaid_percent + ')</span>';
           html += '</div>';
         }
+        
+        html += '<div style="margin-top: 8px; padding: 6px 10px; background: #f8f9fa; border-radius: 6px; font-size: 11px; color: #666; border-left: 3px solid #6c757d;">';
+        html += '🟡 No Show = 客户预约后未出现 (价值=1)';
+        html += '</div>';
         
         html += '<div class="combined-stats-total">💰 总查询点击: 广告 ' + data.paid_total + ' | 自然 ' + data.nonpaid_total + '</div>';
         html += '</div>';
@@ -3202,7 +3057,6 @@ function render() {
       '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
       '</div>';
 
-    // Chart group button event listeners
     var groupBtns = document.querySelectorAll('.btn-group-btn');
     for (var i = 0; i < groupBtns.length; i++) {
       groupBtns[i].addEventListener('click', function(e) {
@@ -3228,7 +3082,6 @@ function render() {
 // ============================================
 
 function showStaffManagement() {
-  // Create modal for staff management
   var modal = document.createElement('div');
   modal.id = 'staffModal';
   modal.className = 'modal';
@@ -3253,7 +3106,6 @@ function showStaffManagement() {
   modal.innerHTML = html;
   document.body.appendChild(modal);
   
-  // Load staff data
   loadStaffData();
 }
 
@@ -3340,7 +3192,6 @@ function showAddStaffForm() {
 }
 
 function editStaff(id) {
-  // Get the agent data first
   fetch("/api/get-agents?all=true")
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -3372,7 +3223,6 @@ function showStaffForm(agent) {
   var dingtalk = agent ? agent.dingtalk_id : '';
   var id = agent ? agent.id : null;
   
-  // Remove existing form if any
   var existingForm = document.getElementById('staffFormContainer');
   if (existingForm) existingForm.remove();
   
@@ -3445,7 +3295,6 @@ function saveStaff(id) {
       var form = document.getElementById('staffFormContainer');
       if (form) form.remove();
       loadStaffData();
-      // Also refresh agents list for the main page
       loadAgents();
       setTimeout(function() {
         msgEl.textContent = '';
@@ -3491,6 +3340,7 @@ function toggleStaffStatus(id, currentStatus) {
     alert('网络错误: ' + err.message);
   });
 }
+
 // ============================================
 // Google Sheet Reinstatement
 // ============================================
@@ -3549,13 +3399,8 @@ function exportToGoogleSheets() {
     if (data.success) {
       alert(data.message);
       
-      // ✅ CLEAR SELECTIONS
       selectedReinIds.clear();
-      
-      // ✅ REFRESH THE PAGE (reload reinstatement list)
       loadReinstatementLeads();
-      
-      // ✅ UPDATE THE SELECTION COUNT DISPLAY
       updateReinCount();
     } else {
       alert("导出失败: " + data.error);
@@ -3567,7 +3412,6 @@ function exportToGoogleSheets() {
     alert("网络错误: " + err.message);
   });
 }
-// ============================================
 
 render();
 </script>
