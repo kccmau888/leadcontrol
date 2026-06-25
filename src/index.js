@@ -1922,6 +1922,7 @@ var currentGroupBy = 'day';
 
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
+  { value: '1', label: 'No Show', isZero: false },
   { value: 'below_20k', label: 'Below 2萬', isZero: false },
   { value: '20k_50k', label: '2萬 - 5萬', isZero: false },
   { value: '50k_80k', label: '5萬 - 8萬', isZero: false },
@@ -1932,6 +1933,7 @@ var rentBudgetOptions = [
 
 var buyBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
+  { value: '1', label: 'No Show', isZero: false },
   { value: 'below_8m', label: 'Below 800萬', isZero: false },
   { value: '8m_15m', label: '800萬 - 1500萬', isZero: false },
   { value: '15m_20m', label: '1500萬 - 2000萬', isZero: false },
@@ -2275,6 +2277,10 @@ function renderTable(leads) {
       statusText = '已拒绝';
       statusBg = '#dc3545';
       statusColor = 'white';
+    } else if (currentValue === 1) {
+      statusText = 'No Show';  // 新增
+      statusBg = '#888e53';    // 灰色
+      statusColor = 'white';
     } else {
       statusText = '已验证';
       statusBg = '#28a745';
@@ -2438,7 +2444,8 @@ window.onclick = function(event) {
 
 function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
   if (budgetRange === '0') return 0;
-  
+  if (budgetRange === '1') return 1;
+
   function extractNumber(str) {
     if (!str || str === '-') return 0;
     var match = str.match(/(\\d+(?:,\\d+)?)/);
@@ -2478,6 +2485,10 @@ function updateStatusDisplay(statusInput, value) {
   } else if (value === 0) {
     statusInput.value = '已拒绝';
     statusInput.style.backgroundColor = '#dc3545';
+    statusInput.style.color = 'white';
+  } else if (value === 1) {
+    statusInput.value = 'No Show';  // 新增
+    statusInput.style.backgroundColor = '#888e53';  // 灰色
     statusInput.style.color = 'white';
   } else {
     statusInput.value = '已验证';
@@ -2633,11 +2644,12 @@ function updateLead(id) {
     }
   }
   
-  var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : '已验证');
-  var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
-  if (value !== null && value > 0) confirmMsg += '\\n转化价值: ' + value;
-  else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
-  if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
+var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : ((value === 1) ? 'No Show' : '已验证'));
+var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
+if (value !== null && value > 1) confirmMsg += '\\n转化价值: ' + value;
+else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
+else if (value === 1) confirmMsg += '\\n此线索将被标记为 No Show';
+if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
   
   if (!confirm(confirmMsg)) return;
   
