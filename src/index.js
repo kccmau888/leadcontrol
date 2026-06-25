@@ -429,7 +429,7 @@ async function getGoogleAccessToken(serviceAccountJson) {
 }
 
 // ============================================
-// Combined Conversion Stats (MODIFIED - Added No Show)
+// Combined Conversion Stats (MODIFIED - Added 未有来电)
 // ============================================
 async function handleCombinedConversionStats(env, request) {
   try {
@@ -452,7 +452,7 @@ async function handleCombinedConversionStats(env, request) {
       params.push(dateTo);
     }
     
-    // Paid stats query (with gclid) - MODIFIED: Added '1' case for No Show
+    // Paid stats query (with gclid) - MODIFIED: Added '1' case for 未有来电
     const paidSql = `
       WITH paid AS (
         SELECT value AS ConvValue
@@ -477,7 +477,7 @@ async function handleCombinedConversionStats(env, request) {
       GROUP BY Conversion_Category
     `;
     
-    // Non-paid stats query (no gclid) - MODIFIED: Added '1' case for No Show
+    // Non-paid stats query (no gclid) - MODIFIED: Added '1' case for 未有来电
     const nonpaidSql = `
       WITH nonpaid AS (
         SELECT value AS ConvValue
@@ -530,7 +530,7 @@ async function handleCombinedConversionStats(env, request) {
     const categoryLabels = {
       '-': '未验证',
       '0': '无关查询',
-      '1': 'No Show',
+      '1': '未有来电',
       '>0': '有效查询'
     };
     
@@ -899,7 +899,7 @@ async function handleGetClientLeads(request, env) {
 }
 
 // ============================================
-// Admin Get Leads (MODIFIED - Added No Show filter support)
+// Admin Get Leads (MODIFIED - Added 未有来电 filter support)
 // ============================================
 
 async function handleAdminGetLeads(request, env) {
@@ -1151,7 +1151,7 @@ async function handleAdminBatchUpdate(request, env) {
 }
 
 // ============================================
-// Admin Export (MODIFIED - Added No Show to CSV)
+// Admin Export (MODIFIED - Added 未有来电 to CSV)
 // ============================================
 
 async function handleAdminExport(request, env) {
@@ -1193,7 +1193,7 @@ async function handleAdminExport(request, env) {
     function getStatusLabel(status, value) {
       if (status === 'pending') return '待处理';
       if (value === 0) return '已拒绝';
-      if (value === 1) return 'No Show';
+      if (value === 1) return '未有来电';
       if (value > 1) return '已验证';
       return status || '-';
     }
@@ -1343,6 +1343,7 @@ async function handleGetReinstatementLeads(request, env) {
             AND client_id IS NOT NULL 
             AND client_id <> 'unknown' 
             AND value IS NOT NULL
+            AND value <> 1
             AND (reinstatement_submitted_at IS NULL OR datetime(reinstatement_submitted_at) < datetime('now', '-90 days'))
             AND datetime(created_at) BETWEEN datetime('now', '-90 days') AND datetime('now', '-1 days')
       )
@@ -1769,10 +1770,10 @@ var agentsList = [];
 var conversionChart = null;
 var currentGroupBy = 'day';
 
-// MODIFIED: Added '1' option for No Show
+// MODIFIED: Added '1' option for 未有来电
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
-  { value: '1', label: 'No Show', isZero: false },
+  { value: '1', label: 'No Ring', isZero: false },
   { value: 'below_20k', label: 'Below 2萬', isZero: false },
   { value: '20k_50k', label: '2萬 - 5萬', isZero: false },
   { value: '50k_80k', label: '5萬 - 8萬', isZero: false },
@@ -1781,10 +1782,10 @@ var rentBudgetOptions = [
   { value: 'above_160k', label: 'Above 16萬', isZero: false }
 ];
 
-// MODIFIED: Added '1' option for No Show
+// MODIFIED: Added '1' option for 未有来电
 var buyBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
-  { value: '1', label: 'No Show', isZero: false },
+  { value: '1', label: 'No Ring', isZero: false },
   { value: 'below_8m', label: 'Below 800萬', isZero: false },
   { value: '8m_15m', label: '800萬 - 1500萬', isZero: false },
   { value: '15m_20m', label: '1500萬 - 2000萬', isZero: false },
@@ -1976,14 +1977,14 @@ function exportAllLeads() {
     });
 }
 
-// MODIFIED: Added No Show filter option
+// MODIFIED: Added 未有来电 filter option
 function loadFilters() {
   fetch('/api/leads?limit=1')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success && data.filters) {
         var html = '<div class="filters">';
-        html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">No Show</option></select></div>';
+        html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
         html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
         for (var i = 0; i < data.filters.agents.length; i++) {
           html += '<option value="' + data.filters.agents[i] + '">' + data.filters.agents[i] + '</option>';
@@ -2006,7 +2007,7 @@ function loadFilters() {
     });
 }
 
-// MODIFIED: Handle No Show filter
+// MODIFIED: Handle 未有来电 filter
 function applyFilters() {
   var statusValue = document.getElementById('filterStatus').value;
   if (statusValue === 'noshow') {
@@ -2083,7 +2084,7 @@ function cutUrlBeforeQuestionMark(url) {
     return url.split('?')[0];
 }
 
-// MODIFIED: Added No Show status display in table
+// MODIFIED: Added 未有来电 status display in table
 function renderTable(leads) {
   var container = document.getElementById('tablePanel');
   if (!leads || leads.length === 0) {
@@ -2142,7 +2143,7 @@ function renderTable(leads) {
       statusBg = '#dc3545';
       statusColor = 'white';
     } else if (currentValue === 1) {
-      statusText = 'No Show';
+      statusText = '未有来电';
       statusBg = '#6c757d';
       statusColor = 'white';
     } else {
@@ -2264,7 +2265,7 @@ function showClientLeads(clientId) {
             statusText = '已验证';
             statusClass = 'status-verified-small';
           } else if (lead.status === 'noshow') {
-            statusText = 'No Show';
+            statusText = '未有来电';
             statusClass = 'status-noshow-small';
           } else {
             statusText = '已拒绝';
@@ -2307,7 +2308,7 @@ window.onclick = function(event) {
   if (event.target === modal) closeModal();
 };
 
-// MODIFIED: Added support for No Show (value = 1)
+// MODIFIED: Added support for 未有来电 (value = 1)
 function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
   if (budgetRange === '0') return 0;
   if (budgetRange === '1') return 1;
@@ -2343,7 +2344,7 @@ function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
   }
 }
 
-// MODIFIED: Added No Show status
+// MODIFIED: Added 未有来电 status
 function updateStatusDisplay(statusInput, value) {
   if (value === null || value === undefined || value === '') {
     statusInput.value = '待处理';
@@ -2354,7 +2355,7 @@ function updateStatusDisplay(statusInput, value) {
     statusInput.style.backgroundColor = '#dc3545';
     statusInput.style.color = 'white';
   } else if (value === 1) {
-    statusInput.value = 'No Show';
+    statusInput.value = '未有来电';
     statusInput.style.backgroundColor = '#6c757d';
     statusInput.style.color = 'white';
   } else {
@@ -2464,7 +2465,7 @@ function onTransactionTypeChange(id) {
   }
 }
 
-// MODIFIED: Added No Show support in update confirmation
+// MODIFIED: Added 未有来电 support in update confirmation
 function updateLead(id) {
   var budgetSelect = document.getElementById('budget_' + id);
   var valueInput = document.getElementById('value_' + id);
@@ -2497,11 +2498,11 @@ function updateLead(id) {
     }
   }
   
-  var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : ((value === 1) ? 'No Show' : '已验证'));
+  var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : ((value === 1) ? '未有来电' : '已验证'));
   var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
   if (value !== null && value > 1) confirmMsg += '\\n转化价值: ' + value;
   else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
-  else if (value === 1) confirmMsg += '\\n此线索将被标记为 No Show';
+  else if (value === 1) confirmMsg += '\\n此线索将被标记为未有来电';
   if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
   
   if (!confirm(confirmMsg)) return;
@@ -2962,7 +2963,7 @@ function logout() {
   render();
 }
 
-// MODIFIED: Added No Show support in combined stats display
+// MODIFIED: Added 未有来电 support in combined stats display
 function loadCombinedConversionStats() {
   var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
   var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
@@ -3002,7 +3003,7 @@ function loadCombinedConversionStats() {
         }
         
         html += '<div style="margin-top: 8px; padding: 6px 10px; background: #f8f9fa; border-radius: 6px; font-size: 11px; color: #666; border-left: 3px solid #6c757d;">';
-        html += '🟡 No Show = 客户预约后未出现 (价值=1)';
+        html += '🟡 未有来电 = 客户未有来电 (价值=1)';
         html += '</div>';
         
         html += '<div class="combined-stats-total">💰 总查询点击: 广告 ' + data.paid_total + ' | 自然 ' + data.nonpaid_total + '</div>';
