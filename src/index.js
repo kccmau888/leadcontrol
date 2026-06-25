@@ -1773,7 +1773,7 @@ var currentGroupBy = 'day';
 // MODIFIED: Added '1' option for 未有来电
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
-  { value: '1', label: 'No Ring', isZero: false },
+  { value: '1', label: '未有来电', isZero: false },
   { value: 'below_20k', label: 'Below 2萬', isZero: false },
   { value: '20k_50k', label: '2萬 - 5萬', isZero: false },
   { value: '50k_80k', label: '5萬 - 8萬', isZero: false },
@@ -1785,7 +1785,7 @@ var rentBudgetOptions = [
 // MODIFIED: Added '1' option for 未有来电
 var buyBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
-  { value: '1', label: 'No Ring', isZero: false },
+  { value: '1', label: '未有来电', isZero: false },
   { value: 'below_8m', label: 'Below 800萬', isZero: false },
   { value: '8m_15m', label: '800萬 - 1500萬', isZero: false },
   { value: '15m_20m', label: '1500萬 - 2000萬', isZero: false },
