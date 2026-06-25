@@ -2279,7 +2279,7 @@ function renderTable(leads) {
       statusColor = '#856404';
     } else if (currentValue === 1) {
       statusText = 'No Show';
-      statusBg = '#1c9d47';
+      statusBg = '#788322';
       statusColor = 'white';
     } else if (currentValue === 0) {
       statusText = '已拒绝';
@@ -2490,6 +2490,10 @@ function updateStatusDisplay(statusInput, value) {
   } else if (value === 0) {
     statusInput.value = '已拒绝';
     statusInput.style.backgroundColor = '#dc3545';
+    statusInput.style.color = 'white';
+  } else if (value === 1) {
+    statusInput.value = 'No Show';
+    statusInput.style.backgroundColor = '#788322';
     statusInput.style.color = 'white';
   } else {
     statusInput.value = '已验证';
