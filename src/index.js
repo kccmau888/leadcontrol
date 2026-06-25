@@ -466,8 +466,7 @@ async function handleCombinedConversionStats(env, request) {
         CASE 
           WHEN ConvValue IS NULL THEN '-'
           WHEN ConvValue = '0' THEN '0'
-          WHEN ConvValue = '1' THEN '1'
-          ELSE '>1'
+          ELSE '>0'
         END AS Conversion_Category,
         COUNT(*) AS Record_Count
       FROM paid
@@ -491,8 +490,7 @@ async function handleCombinedConversionStats(env, request) {
         CASE 
           WHEN ConvValue IS NULL THEN '-'
           WHEN ConvValue = '0' THEN '0'
-          WHEN ConvValue = '1' THEN '1'
-          ELSE '>1'
+          ELSE '>0'
         END AS Conversion_Category,
         COUNT(*) AS Record_Count
       FROM nonpaid
@@ -523,12 +521,11 @@ async function handleCombinedConversionStats(env, request) {
     }
     
     // Define categories in order
-    const categories = ['-', '0', '1', '>1'];
+    const categories = ['-', '0', '>0'];
     const categoryLabels = {
       '-': '未验证',
       '0': '无关查询',
-      '1': 'No Show',
-      '>1': '有效查询'
+      '>0': '有效查询'
     };
     
     const stats = [];
@@ -1325,7 +1322,6 @@ async function handleGetReinstatementLeads(request, env) {
             AND client_id IS NOT NULL 
             AND client_id <> 'unknown' 
             AND value IS NOT NULL
-            AND value <> 1
             AND (reinstatement_submitted_at IS NULL OR datetime(reinstatement_submitted_at) < datetime('now', '-90 days'))
             AND datetime(created_at) BETWEEN datetime('now', '-90 days') AND datetime('now', '-1 days')
       )
@@ -1467,7 +1463,7 @@ async function handleConversionTrend(env, request) {
           datetime(created_at, '+8 hours') as hk_created_at,
           ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
         FROM leads
-        WHERE value > 1
+        WHERE value > 0
       ),
       filtered_conversions AS (
         SELECT * 
@@ -1591,7 +1587,7 @@ async function handleConversionTrend_old(env, request) {
           verified_at,
           ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
         FROM leads
-        WHERE value > 1
+        WHERE value > 0
           ${dateCondition}
       )
       SELECT 
@@ -1926,7 +1922,6 @@ var currentGroupBy = 'day';
 
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
-  { value: 'no_show', label: 'No Show', isZero: false },
   { value: 'below_20k', label: 'Below 2萬', isZero: false },
   { value: '20k_50k', label: '2萬 - 5萬', isZero: false },
   { value: '50k_80k', label: '5萬 - 8萬', isZero: false },
@@ -1937,7 +1932,6 @@ var rentBudgetOptions = [
 
 var buyBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
-  { value: 'no_show', label: 'No Show', isZero: false },   
   { value: 'below_8m', label: 'Below 800萬', isZero: false },
   { value: '8m_15m', label: '800萬 - 1500萬', isZero: false },
   { value: '15m_20m', label: '1500萬 - 2000萬', isZero: false },
@@ -2277,10 +2271,6 @@ function renderTable(leads) {
       statusText = '待处理';
       statusBg = '#ffc107';
       statusColor = '#856404';
-    } else if (currentValue === 1) {
-      statusText = 'No Show';
-      statusBg = '#788322';
-      statusColor = 'white';
     } else if (currentValue === 0) {
       statusText = '已拒绝';
       statusBg = '#dc3545';
@@ -2460,7 +2450,6 @@ function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
   
   if (isRent) {
     switch (budgetRange) {
-      case 'no_show': return 1;    
       case 'below_20k': return 2000;
       case '20k_50k': return Math.round(35000 * 0.3);
       case '50k_80k': return Math.round(65000 * 0.3);
@@ -2471,7 +2460,6 @@ function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
     }
   } else {
     switch (budgetRange) {
-      case 'no_show': return 1;  
       case 'below_8m': return 2000;
       case '8m_15m': return Math.round(11500000 * 0.003);
       case '15m_20m': return Math.round(17500000 * 0.003);
@@ -2490,10 +2478,6 @@ function updateStatusDisplay(statusInput, value) {
   } else if (value === 0) {
     statusInput.value = '已拒绝';
     statusInput.style.backgroundColor = '#dc3545';
-    statusInput.style.color = 'white';
-  } else if (value === 1) {
-    statusInput.value = 'No Show';
-    statusInput.style.backgroundColor = '#788322';
     statusInput.style.color = 'white';
   } else {
     statusInput.value = '已验证';
@@ -2651,8 +2635,7 @@ function updateLead(id) {
   
   var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : '已验证');
   var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
-  if (value !== null && value > 1) confirmMsg += '\\n转化价值: ' + value;
-  else if (value !== null && value = 1) confirmMsg += '\\n此线索将被标记为 No Show';
+  if (value !== null && value > 0) confirmMsg += '\\n转化价值: ' + value;
   else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
   if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
   
