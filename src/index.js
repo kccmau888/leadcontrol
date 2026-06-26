@@ -901,17 +901,6 @@ async function handleGetClientLeads(request, env) {
 // ============================================
 // Admin Get Leads (MODIFIED - Added 未有来电 filter support)
 // ============================================
-// ============================================
-// Admin Get Leads (MODIFIED - Added campaign filter)
-// ============================================
-
-// ============================================
-// Admin Get Leads (MODIFIED - Added campaign filter from campaign table)
-// ============================================
-
-// ============================================
-// Admin Get Leads (CORRECTED - campaign filter)
-// ============================================
 
 async function handleAdminGetLeads(request, env) {
   try {
@@ -925,7 +914,6 @@ async function handleAdminGetLeads(request, env) {
     const noshow = url.searchParams.get('noshow') === 'true';
     const agent = url.searchParams.get('agent') || '';
     const trafficType = url.searchParams.get('traffic_type') || '';
-    const campaign = url.searchParams.get('campaign') || '';
     const dateFrom = url.searchParams.get('date_from') || '';
     const dateTo = url.searchParams.get('date_to') || '';
     const search = url.searchParams.get('search') || '';
@@ -951,10 +939,6 @@ async function handleAdminGetLeads(request, env) {
       whereConditions.push('traffic_type = ?');
       params.push(trafficType);
     }
-    if (campaign) {
-      whereConditions.push('campaign_name = ?');
-      params.push(campaign);
-    }
     if (dateFrom) {
       whereConditions.push('date(created_at) >= date(?)');
       params.push(dateFrom);
@@ -974,7 +958,6 @@ async function handleAdminGetLeads(request, env) {
     const countResult = await countStmt.bind(...params).first();
     const total = countResult.total;
     
-    // CORRECTED: Join on utm_id = campaign_id
     const dataStmt = await env.lead_db.prepare(`
       SELECT id, client_id, user_ip, agent_name, agent_phone, click_type,
         rent, property_price, size, district, property_type,
@@ -983,7 +966,7 @@ async function handleAdminGetLeads(request, env) {
         traffic_type, traffic_source, campaign_name,
         value, status, verified_by, created_at, time_to_conversion, verified_at, budget_range, transaction_type
       FROM leads
-      LEFT JOIN campaign c ON leads.utm_id = c.campaign_id
+    LEFT JOIN campaign c ON utm_id = c.campaign_id
       ${whereClause}
       ORDER BY ${sortBy} ${sortOrder}
       LIMIT ? OFFSET ?
@@ -991,49 +974,13 @@ async function handleAdminGetLeads(request, env) {
     
     const dataResult = await dataStmt.bind(...params, limit, offset).all();
     
-    // Get agents list for filter
     const agentsStmt = await env.lead_db.prepare(`
       SELECT DISTINCT agent_name FROM leads WHERE agent_name IS NOT NULL AND agent_name != ''
     `).all();
     
-    // Get traffic types for filter
     const trafficStmt = await env.lead_db.prepare(`
       SELECT DISTINCT traffic_type FROM leads WHERE traffic_type IS NOT NULL AND traffic_type != ''
     `).all();
-    
-    // CORRECTED: Get campaigns from campaign table with correct column names
-    let campaigns = [];
-    try {
-      const campaignStmt = await env.lead_db.prepare(`
-        SELECT DISTINCT campaign_name FROM campaign WHERE campaign_name IS NOT NULL AND campaign_name != ''
-        ORDER BY campaign_name
-      `);
-      const campaignResult = await campaignStmt.all();
-      campaigns = campaignResult.results.map(r => r.campaign_name);
-      
-      // If no campaigns found in campaign table, try from leads table
-      if (campaigns.length === 0) {
-        const fallbackStmt = await env.lead_db.prepare(`
-          SELECT DISTINCT campaign_name FROM leads WHERE campaign_name IS NOT NULL AND campaign_name != ''
-          ORDER BY campaign_name
-        `);
-        const fallbackResult = await fallbackStmt.all();
-        campaigns = fallbackResult.results.map(r => r.campaign_name);
-      }
-    } catch (e) {
-      console.error('Campaign query error:', e);
-      // Fallback: try leads table
-      try {
-        const fallbackStmt = await env.lead_db.prepare(`
-          SELECT DISTINCT campaign_name FROM leads WHERE campaign_name IS NOT NULL AND campaign_name != ''
-          ORDER BY campaign_name
-        `);
-        const fallbackResult = await fallbackStmt.all();
-        campaigns = fallbackResult.results.map(r => r.campaign_name);
-      } catch (e2) {
-        console.error('Fallback campaign query error:', e2);
-      }
-    }
     
     const clientCountStmt = await env.lead_db.prepare(`
       SELECT client_id, COUNT(*) as count FROM leads 
@@ -1063,8 +1010,7 @@ async function handleAdminGetLeads(request, env) {
       },
       filters: {
         agents: agentsStmt.results.map(r => r.agent_name),
-        trafficTypes: trafficStmt.results.map(r => r.traffic_type),
-        campaigns: campaigns
+        trafficTypes: trafficStmt.results.map(r => r.traffic_type)
       }
     }), { 
       headers: { 'Content-Type': 'application/json' } 
@@ -1813,7 +1759,7 @@ async function handleAdminPage(env) {
 <script>
 var token = localStorage.getItem('admin_token');
 var currentPage = 1;
-var currentFilters = { status: '', agent: '', traffic_type: '', campaign: '', date_from: '', date_to: '', search: '' };
+var currentFilters = { status: '', agent: '', traffic_type: '', date_from: '', date_to: '', search: '' };
 var selectedLeads = new Set();
 var clientCounts = {};
 var verifiedClientIds = [];
@@ -2031,7 +1977,7 @@ function exportAllLeads() {
     });
 }
 
-// MODIFIED: Added campaign filter option from campaign table
+// MODIFIED: Added 未有来电 filter option
 function loadFilters() {
   fetch('/api/leads?limit=1')
     .then(function(r) { return r.json(); })
@@ -2049,14 +1995,6 @@ function loadFilters() {
           html += '<option value="' + data.filters.trafficTypes[j] + '">' + data.filters.trafficTypes[j] + '</option>';
         }
         html += '</select></div>';
-        // ADDED: Campaign filter
-        html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option>';
-        if (data.filters.campaigns) {
-          for (var k = 0; k < data.filters.campaigns.length; k++) {
-            html += '<option value="' + data.filters.campaigns[k] + '">' + data.filters.campaigns[k] + '</option>';
-          }
-        }
-        html += '</select></div>';
         html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom"></div>';
         html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo"></div>';
         html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
@@ -2068,7 +2006,8 @@ function loadFilters() {
       }
     });
 }
-// MODIFIED: Handle campaign filter
+
+// MODIFIED: Handle 未有来电 filter
 function applyFilters() {
   var statusValue = document.getElementById('filterStatus').value;
   if (statusValue === 'noshow') {
@@ -2077,7 +2016,6 @@ function applyFilters() {
       noshow: 'true',
       agent: document.getElementById('filterAgent').value,
       traffic_type: document.getElementById('filterTraffic').value,
-      campaign: document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '',
       date_from: document.getElementById('filterDateFrom').value,
       date_to: document.getElementById('filterDateTo').value,
       search: document.getElementById('filterSearch').value
@@ -2087,7 +2025,6 @@ function applyFilters() {
       status: statusValue,
       agent: document.getElementById('filterAgent').value,
       traffic_type: document.getElementById('filterTraffic').value,
-      campaign: document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '',
       date_from: document.getElementById('filterDateFrom').value,
       date_to: document.getElementById('filterDateTo').value,
       search: document.getElementById('filterSearch').value
@@ -2101,18 +2038,15 @@ function applyFilters() {
 }
 
 function resetFilters() {
-  var fs = document.getElementById('filterStatus');function resetFilters() {
   var fs = document.getElementById('filterStatus');
   var fa = document.getElementById('filterAgent');
   var ft = document.getElementById('filterTraffic');
-  var fc = document.getElementById('filterCampaign');
   var fd1 = document.getElementById('filterDateFrom');
   var fd2 = document.getElementById('filterDateTo');
   var fsearch = document.getElementById('filterSearch');
   if (fs) fs.value = '';
   if (fa) fa.value = '';
   if (ft) ft.value = '';
-  if (fc) fc.value = '';
   if (fd1) fd1.value = '';
   if (fd2) fd2.value = '';
   if (fsearch) fsearch.value = '';
@@ -2125,7 +2059,6 @@ function loadLeads() {
   if (currentFilters.noshow) url += '&noshow=' + currentFilters.noshow;
   if (currentFilters.agent) url += '&agent=' + currentFilters.agent;
   if (currentFilters.traffic_type) url += '&traffic_type=' + currentFilters.traffic_type;
-  if (currentFilters.campaign) url += '&campaign=' + encodeURIComponent(currentFilters.campaign);
   if (currentFilters.date_from) url += '&date_from=' + currentFilters.date_from;
   if (currentFilters.date_to) url += '&date_to=' + currentFilters.date_to;
   if (currentFilters.search) url += '&search=' + encodeURIComponent(currentFilters.search);
