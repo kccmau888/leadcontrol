@@ -909,6 +909,10 @@ async function handleGetClientLeads(request, env) {
 // Admin Get Leads (MODIFIED - Added campaign filter from campaign table)
 // ============================================
 
+// ============================================
+// Admin Get Leads (CORRECTED - campaign filter)
+// ============================================
+
 async function handleAdminGetLeads(request, env) {
   try {
     const url = new URL(request.url);
@@ -970,6 +974,7 @@ async function handleAdminGetLeads(request, env) {
     const countResult = await countStmt.bind(...params).first();
     const total = countResult.total;
     
+    // CORRECTED: Join on utm_id = campaign_id
     const dataStmt = await env.lead_db.prepare(`
       SELECT id, client_id, user_ip, agent_name, agent_phone, click_type,
         rent, property_price, size, district, property_type,
@@ -978,7 +983,7 @@ async function handleAdminGetLeads(request, env) {
         traffic_type, traffic_source, campaign_name,
         value, status, verified_by, created_at, time_to_conversion, verified_at, budget_range, transaction_type
       FROM leads
-    LEFT JOIN campaign c ON utm_id = c.campaign_id
+      LEFT JOIN campaign c ON leads.utm_id = c.campaign_id
       ${whereClause}
       ORDER BY ${sortBy} ${sortOrder}
       LIMIT ? OFFSET ?
@@ -996,11 +1001,39 @@ async function handleAdminGetLeads(request, env) {
       SELECT DISTINCT traffic_type FROM leads WHERE traffic_type IS NOT NULL AND traffic_type != ''
     `).all();
     
-    // Get campaigns from campaign table (MODIFIED)
-    const campaignStmt = await env.lead_db.prepare(`
-      SELECT DISTINCT campaign_name FROM campaign WHERE campaign_name IS NOT NULL AND campaign_name != ''
-      ORDER BY campaign_name
-    `).all();
+    // CORRECTED: Get campaigns from campaign table with correct column names
+    let campaigns = [];
+    try {
+      const campaignStmt = await env.lead_db.prepare(`
+        SELECT DISTINCT campaign_name FROM campaign WHERE campaign_name IS NOT NULL AND campaign_name != ''
+        ORDER BY campaign_name
+      `);
+      const campaignResult = await campaignStmt.all();
+      campaigns = campaignResult.results.map(r => r.campaign_name);
+      
+      // If no campaigns found in campaign table, try from leads table
+      if (campaigns.length === 0) {
+        const fallbackStmt = await env.lead_db.prepare(`
+          SELECT DISTINCT campaign_name FROM leads WHERE campaign_name IS NOT NULL AND campaign_name != ''
+          ORDER BY campaign_name
+        `);
+        const fallbackResult = await fallbackStmt.all();
+        campaigns = fallbackResult.results.map(r => r.campaign_name);
+      }
+    } catch (e) {
+      console.error('Campaign query error:', e);
+      // Fallback: try leads table
+      try {
+        const fallbackStmt = await env.lead_db.prepare(`
+          SELECT DISTINCT campaign_name FROM leads WHERE campaign_name IS NOT NULL AND campaign_name != ''
+          ORDER BY campaign_name
+        `);
+        const fallbackResult = await fallbackStmt.all();
+        campaigns = fallbackResult.results.map(r => r.campaign_name);
+      } catch (e2) {
+        console.error('Fallback campaign query error:', e2);
+      }
+    }
     
     const clientCountStmt = await env.lead_db.prepare(`
       SELECT client_id, COUNT(*) as count FROM leads 
@@ -1031,7 +1064,7 @@ async function handleAdminGetLeads(request, env) {
       filters: {
         agents: agentsStmt.results.map(r => r.agent_name),
         trafficTypes: trafficStmt.results.map(r => r.traffic_type),
-        campaigns: campaignStmt.results.map(r => r.campaign_name)
+        campaigns: campaigns
       }
     }), { 
       headers: { 'Content-Type': 'application/json' } 
