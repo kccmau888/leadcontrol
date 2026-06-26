@@ -1776,7 +1776,7 @@ async function handleAdminPage(env) {
 <script>
 var token = localStorage.getItem('admin_token');
 var currentPage = 1;
-var currentFilters = { status: '', agent: '', traffic_type: '', date_from: '', date_to: '', search: '' };
+var currentFilters = { status: '', agent: '', traffic_type: '', campaign: '', date_from: '', date_to: '', search: '' };
 var selectedLeads = new Set();
 var clientCounts = {};
 var verifiedClientIds = [];
@@ -2054,15 +2054,18 @@ function loadFilters() {
     });
 }
 
-// MODIFIED: Handle 未有来电 filter
+// MODIFIED: Handle campaign filter
 function applyFilters() {
   var statusValue = document.getElementById('filterStatus').value;
+  var campaignValue = document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '';
+  
   if (statusValue === 'noshow') {
     currentFilters = {
       status: '',
       noshow: 'true',
       agent: document.getElementById('filterAgent').value,
       traffic_type: document.getElementById('filterTraffic').value,
+      campaign: campaignValue,
       date_from: document.getElementById('filterDateFrom').value,
       date_to: document.getElementById('filterDateTo').value,
       search: document.getElementById('filterSearch').value
@@ -2072,6 +2075,7 @@ function applyFilters() {
       status: statusValue,
       agent: document.getElementById('filterAgent').value,
       traffic_type: document.getElementById('filterTraffic').value,
+      campaign: campaignValue,
       date_from: document.getElementById('filterDateFrom').value,
       date_to: document.getElementById('filterDateTo').value,
       search: document.getElementById('filterSearch').value
@@ -2088,12 +2092,14 @@ function resetFilters() {
   var fs = document.getElementById('filterStatus');
   var fa = document.getElementById('filterAgent');
   var ft = document.getElementById('filterTraffic');
+  var fc = document.getElementById('filterCampaign');
   var fd1 = document.getElementById('filterDateFrom');
   var fd2 = document.getElementById('filterDateTo');
   var fsearch = document.getElementById('filterSearch');
   if (fs) fs.value = '';
   if (fa) fa.value = '';
   if (ft) ft.value = '';
+  if (fc) fc.value = '';
   if (fd1) fd1.value = '';
   if (fd2) fd2.value = '';
   if (fsearch) fsearch.value = '';
@@ -2106,6 +2112,7 @@ function loadLeads() {
   if (currentFilters.noshow) url += '&noshow=' + currentFilters.noshow;
   if (currentFilters.agent) url += '&agent=' + currentFilters.agent;
   if (currentFilters.traffic_type) url += '&traffic_type=' + currentFilters.traffic_type;
+  if (currentFilters.campaign) url += '&campaign=' + encodeURIComponent(currentFilters.campaign);
   if (currentFilters.date_from) url += '&date_from=' + currentFilters.date_from;
   if (currentFilters.date_to) url += '&date_to=' + currentFilters.date_to;
   if (currentFilters.search) url += '&search=' + encodeURIComponent(currentFilters.search);
