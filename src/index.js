@@ -905,6 +905,10 @@ async function handleGetClientLeads(request, env) {
 // Admin Get Leads (MODIFIED - Added campaign filter)
 // ============================================
 
+// ============================================
+// Admin Get Leads (MODIFIED - Added campaign filter from campaign table)
+// ============================================
+
 async function handleAdminGetLeads(request, env) {
   try {
     const url = new URL(request.url);
@@ -917,7 +921,7 @@ async function handleAdminGetLeads(request, env) {
     const noshow = url.searchParams.get('noshow') === 'true';
     const agent = url.searchParams.get('agent') || '';
     const trafficType = url.searchParams.get('traffic_type') || '';
-    const campaign = url.searchParams.get('campaign') || '';  // ADDED
+    const campaign = url.searchParams.get('campaign') || '';
     const dateFrom = url.searchParams.get('date_from') || '';
     const dateTo = url.searchParams.get('date_to') || '';
     const search = url.searchParams.get('search') || '';
@@ -943,7 +947,7 @@ async function handleAdminGetLeads(request, env) {
       whereConditions.push('traffic_type = ?');
       params.push(trafficType);
     }
-    if (campaign) {  // ADDED
+    if (campaign) {
       whereConditions.push('campaign_name = ?');
       params.push(campaign);
     }
@@ -992,9 +996,9 @@ async function handleAdminGetLeads(request, env) {
       SELECT DISTINCT traffic_type FROM leads WHERE traffic_type IS NOT NULL AND traffic_type != ''
     `).all();
     
-    // Get campaigns for filter (ADDED)
+    // Get campaigns from campaign table (MODIFIED)
     const campaignStmt = await env.lead_db.prepare(`
-      SELECT DISTINCT campaign_name FROM leads WHERE campaign_name IS NOT NULL AND campaign_name != ''
+      SELECT DISTINCT campaign_name FROM campaign WHERE campaign_name IS NOT NULL AND campaign_name != ''
       ORDER BY campaign_name
     `).all();
     
@@ -1027,7 +1031,7 @@ async function handleAdminGetLeads(request, env) {
       filters: {
         agents: agentsStmt.results.map(r => r.agent_name),
         trafficTypes: trafficStmt.results.map(r => r.traffic_type),
-        campaigns: campaignStmt.results.map(r => r.campaign_name)  // ADDED
+        campaigns: campaignStmt.results.map(r => r.campaign_name)
       }
     }), { 
       headers: { 'Content-Type': 'application/json' } 
@@ -1994,6 +1998,7 @@ function exportAllLeads() {
     });
 }
 
+// MODIFIED: Added campaign filter option from campaign table
 function loadFilters() {
   fetch('/api/leads?limit=1')
     .then(function(r) { return r.json(); })
@@ -2030,7 +2035,6 @@ function loadFilters() {
       }
     });
 }
-
 // MODIFIED: Handle campaign filter
 function applyFilters() {
   var statusValue = document.getElementById('filterStatus').value;
@@ -2040,7 +2044,7 @@ function applyFilters() {
       noshow: 'true',
       agent: document.getElementById('filterAgent').value,
       traffic_type: document.getElementById('filterTraffic').value,
-      campaign: document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '',  // ADDED
+      campaign: document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '',
       date_from: document.getElementById('filterDateFrom').value,
       date_to: document.getElementById('filterDateTo').value,
       search: document.getElementById('filterSearch').value
@@ -2050,7 +2054,7 @@ function applyFilters() {
       status: statusValue,
       agent: document.getElementById('filterAgent').value,
       traffic_type: document.getElementById('filterTraffic').value,
-      campaign: document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '',  // ADDED
+      campaign: document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '',
       date_from: document.getElementById('filterDateFrom').value,
       date_to: document.getElementById('filterDateTo').value,
       search: document.getElementById('filterSearch').value
@@ -2064,17 +2068,18 @@ function applyFilters() {
 }
 
 function resetFilters() {
+  var fs = document.getElementById('filterStatus');function resetFilters() {
   var fs = document.getElementById('filterStatus');
   var fa = document.getElementById('filterAgent');
   var ft = document.getElementById('filterTraffic');
-  var fc = document.getElementById('filterCampaign');  // ADDED
+  var fc = document.getElementById('filterCampaign');
   var fd1 = document.getElementById('filterDateFrom');
   var fd2 = document.getElementById('filterDateTo');
   var fsearch = document.getElementById('filterSearch');
   if (fs) fs.value = '';
   if (fa) fa.value = '';
   if (ft) ft.value = '';
-  if (fc) fc.value = '';  // ADDED
+  if (fc) fc.value = '';
   if (fd1) fd1.value = '';
   if (fd2) fd2.value = '';
   if (fsearch) fsearch.value = '';
@@ -2087,7 +2092,7 @@ function loadLeads() {
   if (currentFilters.noshow) url += '&noshow=' + currentFilters.noshow;
   if (currentFilters.agent) url += '&agent=' + currentFilters.agent;
   if (currentFilters.traffic_type) url += '&traffic_type=' + currentFilters.traffic_type;
-  if (currentFilters.campaign) url += '&campaign=' + encodeURIComponent(currentFilters.campaign);  // ADDED
+  if (currentFilters.campaign) url += '&campaign=' + encodeURIComponent(currentFilters.campaign);
   if (currentFilters.date_from) url += '&date_from=' + currentFilters.date_from;
   if (currentFilters.date_to) url += '&date_to=' + currentFilters.date_to;
   if (currentFilters.search) url += '&search=' + encodeURIComponent(currentFilters.search);
