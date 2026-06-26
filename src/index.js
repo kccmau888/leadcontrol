@@ -906,6 +906,10 @@ async function handleGetClientLeads(request, env) {
 // Admin Get Leads (Step 1: Add campaign dropdown data)
 // ============================================
 
+// ============================================
+// Admin Get Leads (Step 2: Filter by campaign_id)
+// ============================================
+
 async function handleAdminGetLeads(request, env) {
   try {
     const url = new URL(request.url);
@@ -918,6 +922,7 @@ async function handleAdminGetLeads(request, env) {
     const noshow = url.searchParams.get('noshow') === 'true';
     const agent = url.searchParams.get('agent') || '';
     const trafficType = url.searchParams.get('traffic_type') || '';
+    const campaignId = url.searchParams.get('campaign') || '';  // Now receiving campaign_id
     const dateFrom = url.searchParams.get('date_from') || '';
     const dateTo = url.searchParams.get('date_to') || '';
     const search = url.searchParams.get('search') || '';
@@ -943,6 +948,11 @@ async function handleAdminGetLeads(request, env) {
       whereConditions.push('traffic_type = ?');
       params.push(trafficType);
     }
+    if (campaignId) {
+      // Filter by campaign_id (join with campaign table)
+      whereConditions.push('c.campaign_id = ?');
+      params.push(campaignId);
+    }
     if (dateFrom) {
       whereConditions.push('date(created_at) >= date(?)');
       params.push(dateFrom);
@@ -958,7 +968,7 @@ async function handleAdminGetLeads(request, env) {
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
     
-    const countStmt = await env.lead_db.prepare(`SELECT COUNT(*) as total FROM leads ${whereClause}`);
+    const countStmt = await env.lead_db.prepare(`SELECT COUNT(*) as total FROM leads LEFT JOIN campaign c ON utm_id = c.campaign_id ${whereClause}`);
     const countResult = await countStmt.bind(...params).first();
     const total = countResult.total;
     
@@ -970,7 +980,7 @@ async function handleAdminGetLeads(request, env) {
         traffic_type, traffic_source, campaign_name,
         value, status, verified_by, created_at, time_to_conversion, verified_at, budget_range, transaction_type
       FROM leads
-    LEFT JOIN campaign c ON utm_id = c.campaign_id
+      LEFT JOIN campaign c ON utm_id = c.campaign_id
       ${whereClause}
       ORDER BY ${sortBy} ${sortOrder}
       LIMIT ? OFFSET ?
@@ -986,7 +996,7 @@ async function handleAdminGetLeads(request, env) {
       SELECT DISTINCT traffic_type FROM leads WHERE traffic_type IS NOT NULL AND traffic_type != ''
     `).all();
     
-    // NEW: Get campaigns from campaign table with campaign_id as value
+    // Get campaigns for the dropdown
     const campaignStmt = await env.lead_db.prepare(`
       SELECT campaign_id, campaign_name FROM campaign 
       WHERE campaign_name IS NOT NULL AND campaign_name != ''
@@ -1027,7 +1037,7 @@ async function handleAdminGetLeads(request, env) {
       filters: {
         agents: agentsStmt.results.map(r => r.agent_name),
         trafficTypes: trafficStmt.results.map(r => r.traffic_type),
-        campaigns: campaigns  // NEW: Send campaign data
+        campaigns: campaigns
       }
     }), { 
       headers: { 'Content-Type': 'application/json' } 
