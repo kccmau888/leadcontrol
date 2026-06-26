@@ -902,6 +902,10 @@ async function handleGetClientLeads(request, env) {
 // Admin Get Leads (MODIFIED - Added 未有来电 filter support)
 // ============================================
 
+// ============================================
+// Admin Get Leads (Step 1: Add campaign dropdown data)
+// ============================================
+
 async function handleAdminGetLeads(request, env) {
   try {
     const url = new URL(request.url);
@@ -982,6 +986,18 @@ async function handleAdminGetLeads(request, env) {
       SELECT DISTINCT traffic_type FROM leads WHERE traffic_type IS NOT NULL AND traffic_type != ''
     `).all();
     
+    // NEW: Get campaigns from campaign table with campaign_id as value
+    const campaignStmt = await env.lead_db.prepare(`
+      SELECT campaign_id, campaign_name FROM campaign 
+      WHERE campaign_name IS NOT NULL AND campaign_name != ''
+      ORDER BY campaign_name
+    `);
+    const campaignResult = await campaignStmt.all();
+    const campaigns = campaignResult.results.map(row => ({
+      id: row.campaign_id,
+      name: row.campaign_name
+    }));
+    
     const clientCountStmt = await env.lead_db.prepare(`
       SELECT client_id, COUNT(*) as count FROM leads 
       WHERE client_id IS NOT NULL AND client_id != '' 
@@ -1010,7 +1026,8 @@ async function handleAdminGetLeads(request, env) {
       },
       filters: {
         agents: agentsStmt.results.map(r => r.agent_name),
-        trafficTypes: trafficStmt.results.map(r => r.traffic_type)
+        trafficTypes: trafficStmt.results.map(r => r.traffic_type),
+        campaigns: campaigns  // NEW: Send campaign data
       }
     }), { 
       headers: { 'Content-Type': 'application/json' } 
@@ -1977,7 +1994,7 @@ function exportAllLeads() {
     });
 }
 
-// MODIFIED: Added 未有来电 filter option
+// MODIFIED: Added campaign dropdown
 function loadFilters() {
   fetch('/api/leads?limit=1')
     .then(function(r) { return r.json(); })
@@ -1985,16 +2002,29 @@ function loadFilters() {
       if (data.success && data.filters) {
         var html = '<div class="filters">';
         html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
+        
         html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
         for (var i = 0; i < data.filters.agents.length; i++) {
           html += '<option value="' + data.filters.agents[i] + '">' + data.filters.agents[i] + '</option>';
         }
         html += '</select></div>';
+        
         html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option>';
         for (var j = 0; j < data.filters.trafficTypes.length; j++) {
           html += '<option value="' + data.filters.trafficTypes[j] + '">' + data.filters.trafficTypes[j] + '</option>';
         }
         html += '</select></div>';
+        
+        // NEW: Campaign dropdown - value = campaign_id, display = campaign_name
+        html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option>';
+        if (data.filters.campaigns && data.filters.campaigns.length > 0) {
+          for (var k = 0; k < data.filters.campaigns.length; k++) {
+            var campaign = data.filters.campaigns[k];
+            html += '<option value="' + campaign.id + '">' + campaign.name + '</option>';
+          }
+        }
+        html += '</select></div>';
+        
         html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom"></div>';
         html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo"></div>';
         html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
@@ -2004,6 +2034,23 @@ function loadFilters() {
         html += '</div>';
         document.getElementById('filtersPanel').innerHTML = html;
       }
+    })
+    .catch(function(err) {
+      console.error("Load filters error:", err);
+      // Fallback: basic filters without campaign
+      var html = '<div class="filters">';
+      html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
+      html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option></select></div>';
+      html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option></select></div>';
+      html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option></select></div>';
+      html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom"></div>';
+      html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo"></div>';
+      html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
+      html += '<button class="btn btn-primary" onclick="applyFilters()">搜索</button>';
+      html += '<button onclick="resetFilters()">重置</button>';
+      html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
+      html += '</div>';
+      document.getElementById('filtersPanel').innerHTML = html;
     });
 }
 
