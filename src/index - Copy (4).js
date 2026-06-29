@@ -2269,8 +2269,8 @@ function renderTable(leads) {
     html += '<td>(' + lead.user_ip + ')</td>';  
     html += '<td></td>';    
     html += '<td></td>';
-    html += '<td class="wrap-text" colspan="4">' + pageLocation + '</td>';
-    html += '<td class="wrap-text" colspan="4">' + landingPage + '</td>';
+    html += '<td colspan="4">' + pageLocation + '</td>';
+    html += '<td colspan="4">' + landingPage + '</td>';
     html += '<td></td>';
     var junkClass = "";
     if (lead.time_to_conversion && lead.time_to_conversion < "00:01:00") {
