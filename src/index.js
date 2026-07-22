@@ -1899,7 +1899,7 @@ function loadConversionTrend() {
           },
           options: {
             responsive: true,
-            maintainAspectRatio: false,
+            maintainAspectRatio: true,
             plugins: {
               legend: {
                 position: 'top',
@@ -3106,7 +3106,7 @@ function render() {
 '<button class="btn-group-btn" data-group="month">按月</button>' +
 '</div>' +
 '</div>' +
-'<canvas id="conversionChart" style="width:750px; height:200px;"></canvas>' +
+'<canvas id="conversionChart" style="width:100%; height:180px;"></canvas>' +
 '</div>' +
 '<div id="combinedStatsCard" class="combined-stats-container"></div>' +
 '<div class="hotline-card">' +
