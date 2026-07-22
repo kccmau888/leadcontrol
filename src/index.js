@@ -3106,7 +3106,9 @@ function render() {
 '<button class="btn-group-btn" data-group="month">按月</button>' +
 '</div>' +
 '</div>' +
-'<canvas id="conversionChart" style="width:100%; height:180px;"></canvas>' +
+'<div style="height:200px; overflow:hidden;">' +
+'<canvas id="conversionChart" style="width:800px; height:200px; max-height:200px; display:block;"></canvas>' +
+'</div>' +
 '</div>' +
 '<div id="combinedStatsCard" class="combined-stats-container"></div>' +
 '<div class="hotline-card">' +
