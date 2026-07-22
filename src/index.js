@@ -1732,8 +1732,6 @@ async function handleAdminPage(env) {
 }
     /* Chart Container */
 .chart-container {
-  width: 800px;
-  height: 260px;
   background: white;
   border-radius: 12px;
   padding: 20px;
@@ -3107,7 +3105,7 @@ function render() {
 '<button class="btn-group-btn" data-group="month">按月</button>' +
 '</div>' +
 '</div>' +
-'<canvas id="conversionChart" style="width:100%; height:180px;"></canvas>' +
+'<canvas id="conversionChart" style="width:800px; height:182px;"></canvas>' +
 '</div>' +
 '<div id="combinedStatsCard" class="combined-stats-container"></div>' +
 '<div class="hotline-card">' +
