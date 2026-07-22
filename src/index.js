@@ -1733,6 +1733,7 @@ async function handleAdminPage(env) {
     /* Chart Container */
 .chart-container {
   width: 800px;
+  height: 350px;
   background: white;
   border-radius: 12px;
   padding: 20px;
