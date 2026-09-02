@@ -1961,18 +1961,18 @@ function setChartGroup(group) {
 }
 
 function loadAgents() {
-    return fetch("/api/get-agents")
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.success && data.agents) {
-                agentsList = data.agents;
-            }
-            return agentsList;
-        })
-        .catch(function(err) {
-            console.error("Load agents error:", err);
-            return [];
-        });
+  return fetch("/api/get-agents")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.agents) {
+        agentsList = data.agents;
+      }
+      return agentsList;
+    })
+    .catch(function(err) {
+      console.error("Load agents error:", err);
+      return [];
+    });
 }
 
 function exportAllLeads() {
@@ -2003,58 +2003,6 @@ function exportAllLeads() {
       event.target.innerText = originalText;
       event.target.disabled = false;
     });
-}
-
-// Load only the filter UI, no data queries
-function loadFiltersOnly() {
-    // Build filters without loading data
-    var html = '<div class="filters">';
-    html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
-    
-    html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
-    for (var i = 0; i < agentsList.length; i++) {
-        html += '<option value="' + agentsList[i].agent_name + '">' + agentsList[i].agent_name + '</option>';
-    }
-    html += '</select></div>';
-    
-    html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option></select></div>';
-    
-    html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option></select></div>';
-    
-    html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom"></div>';
-    html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo"></div>';
-    
-    html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
-    html += '<button class="btn btn-primary" onclick="applyFilters()">🔍 搜索</button>';
-    html += '<button onclick="resetFilters()">重置</button>';
-    html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
-    html += '</div>';
-    document.getElementById('filtersPanel').innerHTML = html;
-    
-    // Load campaign options
-    loadCampaignOptions();
-}
-
-// Load campaign dropdown options
-function loadCampaignOptions() {
-    fetch('/api/leads?limit=1')
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            var campaignSelect = document.getElementById('filterCampaign');
-            if (!campaignSelect) return;
-            
-            if (data.success && data.filters && data.filters.campaigns) {
-                var html = '<option value="">全部</option>';
-                for (var i = 0; i < data.filters.campaigns.length; i++) {
-                    var campaign = data.filters.campaigns[i];
-                    html += '<option value="' + campaign.id + '">' + campaign.name + '</option>';
-                }
-                campaignSelect.innerHTML = html;
-            }
-        })
-        .catch(function(err) {
-            console.error("Load campaigns error:", err);
-        });
 }
 
 // MODIFIED: Added campaign dropdown
@@ -2119,94 +2067,54 @@ function loadFilters() {
 
 // MODIFIED: Handle campaign filter
 function applyFilters() {
-    var statusValue = document.getElementById('filterStatus').value;
-    var campaignValue = document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '';
-    
-    if (statusValue === 'noshow') {
-        currentFilters = {
-            status: '',
-            noshow: 'true',
-            agent: document.getElementById('filterAgent').value,
-            traffic_type: document.getElementById('filterTraffic').value,
-            campaign: campaignValue,
-            date_from: document.getElementById('filterDateFrom').value,
-            date_to: document.getElementById('filterDateTo').value,
-            search: document.getElementById('filterSearch').value
-        };
-    } else {
-        currentFilters = {
-            status: statusValue,
-            agent: document.getElementById('filterAgent').value,
-            traffic_type: document.getElementById('filterTraffic').value,
-            campaign: campaignValue,
-            date_from: document.getElementById('filterDateFrom').value,
-            date_to: document.getElementById('filterDateTo').value,
-            search: document.getElementById('filterSearch').value
-        };
-    }
-    currentPage = 1;
-    selectedLeads.clear();
-    
-    // Show stats section
-    var statsSection = document.getElementById('statsSection');
-    if (statsSection) {
-        statsSection.style.display = 'block';
-    }
-    
-    // Load all data
-    loadLeads();
-    loadCombinedConversionStats();
-    loadConversionTrend();
+  var statusValue = document.getElementById('filterStatus').value;
+  var campaignValue = document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '';
+  
+  if (statusValue === 'noshow') {
+    currentFilters = {
+      status: '',
+      noshow: 'true',
+      agent: document.getElementById('filterAgent').value,
+      traffic_type: document.getElementById('filterTraffic').value,
+      campaign: campaignValue,
+      date_from: document.getElementById('filterDateFrom').value,
+      date_to: document.getElementById('filterDateTo').value,
+      search: document.getElementById('filterSearch').value
+    };
+  } else {
+    currentFilters = {
+      status: statusValue,
+      agent: document.getElementById('filterAgent').value,
+      traffic_type: document.getElementById('filterTraffic').value,
+      campaign: campaignValue,
+      date_from: document.getElementById('filterDateFrom').value,
+      date_to: document.getElementById('filterDateTo').value,
+      search: document.getElementById('filterSearch').value
+    };
+  }
+  currentPage = 1;
+  selectedLeads.clear();
+  loadLeads();
+  loadCombinedConversionStats();
+  loadConversionTrend();
 }
 
 function resetFilters() {
-    var fs = document.getElementById('filterStatus');
-    var fa = document.getElementById('filterAgent');
-    var ft = document.getElementById('filterTraffic');
-    var fc = document.getElementById('filterCampaign');
-    var fd1 = document.getElementById('filterDateFrom');
-    var fd2 = document.getElementById('filterDateTo');
-    var fsearch = document.getElementById('filterSearch');
-    
-    if (fs) fs.value = '';
-    if (fa) fa.value = '';
-    if (ft) ft.value = '';
-    if (fc) fc.value = '';
-    if (fd1) fd1.value = '';
-    if (fd2) fd2.value = '';
-    if (fsearch) fsearch.value = '';
-    
-    // Reset filters
-    currentFilters = {
-        status: '',
-        agent: '',
-        traffic_type: '',
-        campaign: '',
-        date_from: '',
-        date_to: '',
-        search: ''
-    };
-    
-    currentPage = 1;
-    selectedLeads.clear();
-    
-    // Hide stats section
-    var statsSection = document.getElementById('statsSection');
-    if (statsSection) {
-        statsSection.style.display = 'none';
-    }
-    
-    // Show placeholder in table
-    var tablePanel = document.getElementById('tablePanel');
-    if (tablePanel) {
-        tablePanel.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">请设置筛选条件后点击"搜索"查看数据</div>';
-    }
-    
-    // Clear pagination
-    var paginationPanel = document.getElementById('paginationPanel');
-    if (paginationPanel) {
-        paginationPanel.innerHTML = '';
-    }
+  var fs = document.getElementById('filterStatus');
+  var fa = document.getElementById('filterAgent');
+  var ft = document.getElementById('filterTraffic');
+  var fc = document.getElementById('filterCampaign');
+  var fd1 = document.getElementById('filterDateFrom');
+  var fd2 = document.getElementById('filterDateTo');
+  var fsearch = document.getElementById('filterSearch');
+  if (fs) fs.value = '';
+  if (fa) fa.value = '';
+  if (ft) ft.value = '';
+  if (fc) fc.value = '';
+  if (fd1) fd1.value = '';
+  if (fd2) fd2.value = '';
+  if (fsearch) fsearch.value = '';
+  applyFilters();
 }
 
 function loadLeads() {
@@ -3178,65 +3086,61 @@ function loadCombinedConversionStats() {
 }
 
 function render() {
-    var app = document.getElementById('app');
-    if (token) {
-        app.innerHTML = '<div class="admin-box">' +
-            '<div class="button-bar">' +
-            '<div style="display:flex; gap:10px; align-items:center;">' +
-            '<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>' +
-            '<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>' +
-            '<button class="btn btn-danger" onclick="logout()">退出登录</button>' +
-            '</div>' +
-            '</div>' +
-            // Stats section - hidden by default
-            '<div id="statsSection" style="display:none;">' +
-            '<div class="stats-and-hotline-row">' +
-            '<div class="chart-container">' +
-            '<div class="chart-header">' +
-            '<h4>📈 有效转化趋势 (付费 vs 自然)</h4>' +
-            '<div class="chart-group-selector">' +
-            '<button class="btn-group-btn active" data-group="day">按日</button>' +
-            '<button class="btn-group-btn" data-group="week">按周</button>' +
-            '<button class="btn-group-btn" data-group="month">按月</button>' +
-            '</div>' +
-            '</div>' +
-            '<canvas id="conversionChart" style="width:800px; height:200px;"></canvas>' +
-            '</div>' +
-            '<div id="combinedStatsCard" class="combined-stats-container"></div>' +
-            '<div class="hotline-card">' +
-            '<div class="hotline-row">' +
-            '<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>' +
-            '<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>' +
-            '<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>' +
-            '<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>' +
-            '</div>' +
-            '</div>' +
-            '</div>' +
-            '</div>' +
-            '<div id="filtersPanel"></div>' +
-            // Table with placeholder message
-            '<div id="tablePanel"><div style="text-align:center;padding:40px;color:#999;">请设置筛选条件后点击"搜索"查看数据</div></div>' +
-            '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
-            '</div>';
+  var app = document.getElementById('app');
+  if (token) {
+    app.innerHTML = '<div class="admin-box">' +
+'<div class="button-bar">' +
+'<div style="display:flex; gap:10px; align-items:center;">' +
+'<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>' +
+'<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>' +
+'<button class="btn btn-danger" onclick="logout()">退出登录</button>' +
+'</div>' +
+'</div>' +
+'<div class="stats-and-hotline-row">' +
+'<div class="chart-container">' +
+'<div class="chart-header">' +
+'<h4>📈 有效转化趋势 (付费 vs 自然)</h4>' +
+'<div class="chart-group-selector">' +
+'<button class="btn-group-btn active" data-group="day">按日</button>' +
+'<button class="btn-group-btn" data-group="week">按周</button>' +
+'<button class="btn-group-btn" data-group="month">按月</button>' +
+'</div>' +
+'</div>' +
+'<canvas id="conversionChart" style="width:800px; height:200px;"></canvas>' +
+'</div>' +
+'<div id="combinedStatsCard" class="combined-stats-container"></div>' +
+'<div class="hotline-card">' +
+'<div class="hotline-row">' +
+'<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>' +
+'<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>' +
+'<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>' +
+'<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>' +
+'</div>' +
+'</div>' +
+'</div>' +
+      '<div id="filtersPanel"></div>' +
+      '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>' +
+      '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
+      '</div>';
 
-        // Set chart group buttons
-        var groupBtns = document.querySelectorAll('.btn-group-btn');
-        for (var i = 0; i < groupBtns.length; i++) {
-            groupBtns[i].addEventListener('click', function(e) {
-                var group = this.getAttribute('data-group');
-                setChartGroup(group);
-            });
-        }
-        
-        // Load only filters (no data queries)
-        loadAgents().then(function() {
-            loadFiltersOnly();
-        });
-        
-        loadAllHotlineSelections();
-    } else {
-        app.innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
-    }
+    var groupBtns = document.querySelectorAll('.btn-group-btn');
+    for (var i = 0; i < groupBtns.length; i++) {
+      groupBtns[i].addEventListener('click', function(e) {
+        var group = this.getAttribute('data-group');
+        setChartGroup(group);
+      });
+    }   
+    
+    loadCombinedConversionStats();  
+    loadConversionTrend();
+    loadFilters();
+    loadAgents().then(function() {
+      loadLeads();
+    });
+    loadAllHotlineSelections();
+  } else {
+    app.innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
+  }
 }
 
 // ============================================
