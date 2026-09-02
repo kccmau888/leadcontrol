@@ -434,8 +434,17 @@ async function getGoogleAccessToken(serviceAccountJson) {
 async function handleCombinedConversionStats(env, request) {
   try {
     const url = new URL(request.url);
-    const dateFrom = url.searchParams.get('date_from') || '';
-    const dateTo = url.searchParams.get('date_to') || '';
+    let dateFrom = url.searchParams.get('date_from') || '';
+    let dateTo = url.searchParams.get('date_to') || '';
+    // If no dates provided, default to last 30 days
+    if (!dateFrom || !dateTo) {
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        dateFrom = thirtyDaysAgo.toISOString().split('T')[0];
+        dateTo = now.toISOString().split('T')[0];
+    }
     
     // Build date filter condition
     let dateCondition = '';
@@ -1438,7 +1447,16 @@ async function handleConversionTrend(env, request) {
     let dateFrom = url.searchParams.get('date_from') || '';
     let dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
-    
+         // If no dates provided, default to last 30 days
+    if (!dateFrom || !dateTo) {
+        const now = new Date();
+        const thirtyDaysAgo = new Date(now);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+        dateFrom = thirtyDaysAgo.toISOString().split('T')[0];
+        dateTo = now.toISOString().split('T')[0];
+    }
+
     let dateCondition = '';
     let params = [];
     
@@ -1821,6 +1839,17 @@ var buyBudgetOptions = [
   { value: 'above_50m', label: 'Above 5000萬', isZero: false }
 ];
 
+function getDefaultDateRange() {
+    var endDate = new Date();
+    var startDate = new Date();
+    startDate.setDate(startDate.getDate() - 30);
+    
+    return {
+        dateFrom: startDate.toISOString().split('T')[0],
+        dateTo: endDate.toISOString().split('T')[0]
+    };
+}
+
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/[&<>]/g, function(m) {
@@ -1847,12 +1876,19 @@ function formatCurrency(amount) {
 }
 
 function loadConversionTrend() {
-  var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
-  var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
-  
-  var url = '/api/conversion-trend?group_by=' + currentGroupBy;
-  if (dateFrom) url += '&date_from=' + dateFrom;
-  if (dateTo) url += '&date_to=' + dateTo;
+    var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
+    var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
+    
+    // If no dates are set, use default 30-day range
+    if (!dateFrom || !dateTo) {
+        var defaultDates = getDefaultDateRange();
+        dateFrom = defaultDates.dateFrom;
+        dateTo = defaultDates.dateTo;
+    }
+    
+    var url = '/api/conversion-trend?group_by=' + currentGroupBy;
+    url += '&date_from=' + dateFrom;
+    url += '&date_to=' + dateTo;
   
   fetch(url)
     .then(function(r) { return r.json(); })
@@ -1961,18 +1997,18 @@ function setChartGroup(group) {
 }
 
 function loadAgents() {
-    return fetch("/api/get-agents")
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-            if (data.success && data.agents) {
-                agentsList = data.agents;
-            }
-            return agentsList;
-        })
-        .catch(function(err) {
-            console.error("Load agents error:", err);
-            return [];
-        });
+  return fetch("/api/get-agents")
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.agents) {
+        agentsList = data.agents;
+      }
+      return agentsList;
+    })
+    .catch(function(err) {
+      console.error("Load agents error:", err);
+      return [];
+    });
 }
 
 function exportAllLeads() {
@@ -2005,161 +2041,107 @@ function exportAllLeads() {
     });
 }
 
-// Load only the filter UI, no data queries
-function loadFiltersOnly() {
-    // Build filters without loading data
-    var html = '<div class="filters">';
-    html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
-    
-    html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
-    for (var i = 0; i < agentsList.length; i++) {
-        html += '<option value="' + agentsList[i].agent_name + '">' + agentsList[i].agent_name + '</option>';
-    }
-    html += '</select></div>';
-    
-    html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option></select></div>';
-    
-    html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option></select></div>';
-    
-    html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom"></div>';
-    html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo"></div>';
-    
-    html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
-    html += '<button class="btn btn-primary" onclick="applyFilters()">🔍 搜索</button>';
-    html += '<button onclick="resetFilters()">重置</button>';
-    html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
-    html += '</div>';
-    document.getElementById('filtersPanel').innerHTML = html;
-    
-    // Load campaign options
-    loadCampaignOptions();
-}
-
-// Load campaign dropdown options
-function loadCampaignOptions() {
+// MODIFIED: Added campaign dropdown with default dates
+function loadFilters() {
     fetch('/api/leads?limit=1')
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            var campaignSelect = document.getElementById('filterCampaign');
-            if (!campaignSelect) return;
-            
-            if (data.success && data.filters && data.filters.campaigns) {
-                var html = '<option value="">全部</option>';
-                for (var i = 0; i < data.filters.campaigns.length; i++) {
-                    var campaign = data.filters.campaigns[i];
-                    html += '<option value="' + campaign.id + '">' + campaign.name + '</option>';
+            if (data.success && data.filters) {
+                var defaultDates = getDefaultDateRange();
+                
+                var html = '<div class="filters">';
+                html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
+                
+                html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
+                for (var i = 0; i < data.filters.agents.length; i++) {
+                    html += '<option value="' + data.filters.agents[i] + '">' + data.filters.agents[i] + '</option>';
                 }
-                campaignSelect.innerHTML = html;
+                html += '</select></div>';
+                
+                html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option>';
+                for (var j = 0; j < data.filters.trafficTypes.length; j++) {
+                    html += '<option value="' + data.filters.trafficTypes[j] + '">' + data.filters.trafficTypes[j] + '</option>';
+                }
+                html += '</select></div>';
+                
+                // Campaign dropdown
+                html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option>';
+                if (data.filters.campaigns && data.filters.campaigns.length > 0) {
+                    for (var k = 0; k < data.filters.campaigns.length; k++) {
+                        var campaign = data.filters.campaigns[k];
+                        html += '<option value="' + campaign.id + '">' + campaign.name + '</option>';
+                    }
+                }
+                html += '</select></div>';
+                
+                // Date inputs with default values
+                html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom" value="' + defaultDates.dateFrom + '"></div>';
+                html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo" value="' + defaultDates.dateTo + '"></div>';
+                
+                html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
+                html += '<button class="btn btn-primary" onclick="applyFilters()">搜索</button>';
+                html += '<button onclick="resetFilters()">重置</button>';
+                html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
+                html += '</div>';
+                document.getElementById('filtersPanel').innerHTML = html;
             }
         })
         .catch(function(err) {
-            console.error("Load campaigns error:", err);
+            console.error("Load filters error:", err);
+            // Fallback with default dates
+            var defaultDates = getDefaultDateRange();
+            var html = '<div class="filters">';
+            html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
+            html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option></select></div>';
+            html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option></select></div>';
+            html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option></select></div>';
+            html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom" value="' + defaultDates.dateFrom + '"></div>';
+            html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo" value="' + defaultDates.dateTo + '"></div>';
+            html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
+            html += '<button class="btn btn-primary" onclick="applyFilters()">搜索</button>';
+            html += '<button onclick="resetFilters()">重置</button>';
+            html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
+            html += '</div>';
+            document.getElementById('filtersPanel').innerHTML = html;
         });
-}
-
-// MODIFIED: Added campaign dropdown
-function loadFilters() {
-  fetch('/api/leads?limit=1')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success && data.filters) {
-        var html = '<div class="filters">';
-        html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
-        
-        html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
-        for (var i = 0; i < data.filters.agents.length; i++) {
-          html += '<option value="' + data.filters.agents[i] + '">' + data.filters.agents[i] + '</option>';
-        }
-        html += '</select></div>';
-        
-        html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option>';
-        for (var j = 0; j < data.filters.trafficTypes.length; j++) {
-          html += '<option value="' + data.filters.trafficTypes[j] + '">' + data.filters.trafficTypes[j] + '</option>';
-        }
-        html += '</select></div>';
-        
-        // NEW: Campaign dropdown - value = campaign_id, display = campaign_name
-        html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option>';
-        if (data.filters.campaigns && data.filters.campaigns.length > 0) {
-          for (var k = 0; k < data.filters.campaigns.length; k++) {
-            var campaign = data.filters.campaigns[k];
-            html += '<option value="' + campaign.id + '">' + campaign.name + '</option>';
-          }
-        }
-        html += '</select></div>';
-        
-        html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom"></div>';
-        html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo"></div>';
-        html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
-        html += '<button class="btn btn-primary" onclick="applyFilters()">搜索</button>';
-        html += '<button onclick="resetFilters()">重置</button>';
-        html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
-        html += '</div>';
-        document.getElementById('filtersPanel').innerHTML = html;
-      }
-    })
-    .catch(function(err) {
-      console.error("Load filters error:", err);
-      // Fallback: basic filters without campaign
-      var html = '<div class="filters">';
-      html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
-      html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option></select></div>';
-      html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option></select></div>';
-      html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option></select></div>';
-      html += '<div class="filter-group"><label>开始日期</label><input type="date" id="filterDateFrom"></div>';
-      html += '<div class="filter-group"><label>结束日期</label><input type="date" id="filterDateTo"></div>';
-      html += '<div class="filter-group"><label>搜索</label><input type="text" id="filterSearch" placeholder="客户号/代理/区域"></div>';
-      html += '<button class="btn btn-primary" onclick="applyFilters()">搜索</button>';
-      html += '<button onclick="resetFilters()">重置</button>';
-      html += '<button class="btn btn-primary" onclick="showStaffManagement()" style="background:#6c757d; margin-left:auto;">👥 员工管理</button>';
-      html += '</div>';
-      document.getElementById('filtersPanel').innerHTML = html;
-    });
 }
 
 // MODIFIED: Handle campaign filter
 function applyFilters() {
-    var statusValue = document.getElementById('filterStatus').value;
-    var campaignValue = document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '';
-    
-    if (statusValue === 'noshow') {
-        currentFilters = {
-            status: '',
-            noshow: 'true',
-            agent: document.getElementById('filterAgent').value,
-            traffic_type: document.getElementById('filterTraffic').value,
-            campaign: campaignValue,
-            date_from: document.getElementById('filterDateFrom').value,
-            date_to: document.getElementById('filterDateTo').value,
-            search: document.getElementById('filterSearch').value
-        };
-    } else {
-        currentFilters = {
-            status: statusValue,
-            agent: document.getElementById('filterAgent').value,
-            traffic_type: document.getElementById('filterTraffic').value,
-            campaign: campaignValue,
-            date_from: document.getElementById('filterDateFrom').value,
-            date_to: document.getElementById('filterDateTo').value,
-            search: document.getElementById('filterSearch').value
-        };
-    }
-    currentPage = 1;
-    selectedLeads.clear();
-    
-    // Show stats section
-    var statsSection = document.getElementById('statsSection');
-    if (statsSection) {
-        statsSection.style.display = 'block';
-    }
-    
-    // Load all data
-    loadLeads();
-    loadCombinedConversionStats();
-    loadConversionTrend();
+  var statusValue = document.getElementById('filterStatus').value;
+  var campaignValue = document.getElementById('filterCampaign') ? document.getElementById('filterCampaign').value : '';
+  
+  if (statusValue === 'noshow') {
+    currentFilters = {
+      status: '',
+      noshow: 'true',
+      agent: document.getElementById('filterAgent').value,
+      traffic_type: document.getElementById('filterTraffic').value,
+      campaign: campaignValue,
+      date_from: document.getElementById('filterDateFrom').value,
+      date_to: document.getElementById('filterDateTo').value,
+      search: document.getElementById('filterSearch').value
+    };
+  } else {
+    currentFilters = {
+      status: statusValue,
+      agent: document.getElementById('filterAgent').value,
+      traffic_type: document.getElementById('filterTraffic').value,
+      campaign: campaignValue,
+      date_from: document.getElementById('filterDateFrom').value,
+      date_to: document.getElementById('filterDateTo').value,
+      search: document.getElementById('filterSearch').value
+    };
+  }
+  currentPage = 1;
+  selectedLeads.clear();
+  loadLeads();
+  loadCombinedConversionStats();
+  loadConversionTrend();
 }
 
 function resetFilters() {
+    var defaultDates = getDefaultDateRange();
     var fs = document.getElementById('filterStatus');
     var fa = document.getElementById('filterAgent');
     var ft = document.getElementById('filterTraffic');
@@ -2172,41 +2154,25 @@ function resetFilters() {
     if (fa) fa.value = '';
     if (ft) ft.value = '';
     if (fc) fc.value = '';
-    if (fd1) fd1.value = '';
-    if (fd2) fd2.value = '';
+    if (fd1) fd1.value = defaultDates.dateFrom;
+    if (fd2) fd2.value = defaultDates.dateTo;
     if (fsearch) fsearch.value = '';
     
-    // Reset filters
-    currentFilters = {
-        status: '',
-        agent: '',
-        traffic_type: '',
-        campaign: '',
-        date_from: '',
-        date_to: '',
-        search: ''
-    };
+    // Update currentFilters with default dates
+    currentFilters.date_from = defaultDates.dateFrom;
+    currentFilters.date_to = defaultDates.dateTo;
+    currentFilters.status = '';
+    currentFilters.agent = '';
+    currentFilters.traffic_type = '';
+    currentFilters.campaign = '';
+    currentFilters.search = '';
+    currentFilters.noshow = false;
     
     currentPage = 1;
     selectedLeads.clear();
-    
-    // Hide stats section
-    var statsSection = document.getElementById('statsSection');
-    if (statsSection) {
-        statsSection.style.display = 'none';
-    }
-    
-    // Show placeholder in table
-    var tablePanel = document.getElementById('tablePanel');
-    if (tablePanel) {
-        tablePanel.innerHTML = '<div style="text-align:center;padding:40px;color:#999;">请设置筛选条件后点击"搜索"查看数据</div>';
-    }
-    
-    // Clear pagination
-    var paginationPanel = document.getElementById('paginationPanel');
-    if (paginationPanel) {
-        paginationPanel.innerHTML = '';
-    }
+    loadLeads();
+    loadCombinedConversionStats();
+    loadConversionTrend();
 }
 
 function loadLeads() {
@@ -3122,18 +3088,25 @@ function logout() {
 
 // MODIFIED: Added 未有来电 support in combined stats display
 function loadCombinedConversionStats() {
-  var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
-  var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
-  
-  var url = '/api/combined-conversion-stats';
-  var params = [];
-  
-  if (dateFrom) params.push('date_from=' + dateFrom);
-  if (dateTo) params.push('date_to=' + dateTo);
-  
-  if (params.length > 0) {
-    url += '?' + params.join('&');
-  }
+    var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
+    var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
+    
+    // If no dates are set, use default 30-day range
+    if (!dateFrom || !dateTo) {
+        var defaultDates = getDefaultDateRange();
+        dateFrom = defaultDates.dateFrom;
+        dateTo = defaultDates.dateTo;
+    }
+    
+    var url = '/api/combined-conversion-stats';
+    var params = [];
+    
+    if (dateFrom) params.push('date_from=' + dateFrom);
+    if (dateTo) params.push('date_to=' + dateTo);
+    
+    if (params.length > 0) {
+        url += '?' + params.join('&');
+    }
 
   fetch(url)
     .then(function(r) { return r.json(); })
@@ -3188,8 +3161,6 @@ function render() {
             '<button class="btn btn-danger" onclick="logout()">退出登录</button>' +
             '</div>' +
             '</div>' +
-            // Stats section - hidden by default
-            '<div id="statsSection" style="display:none;">' +
             '<div class="stats-and-hotline-row">' +
             '<div class="chart-container">' +
             '<div class="chart-header">' +
@@ -3212,10 +3183,8 @@ function render() {
             '</div>' +
             '</div>' +
             '</div>' +
-            '</div>' +
             '<div id="filtersPanel"></div>' +
-            // Table with placeholder message
-            '<div id="tablePanel"><div style="text-align:center;padding:40px;color:#999;">请设置筛选条件后点击"搜索"查看数据</div></div>' +
+            '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>' +
             '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
             '</div>';
 
@@ -3228,9 +3197,29 @@ function render() {
             });
         }
         
-        // Load only filters (no data queries)
+        // Load everything with default date range
         loadAgents().then(function() {
-            loadFiltersOnly();
+            // Set default date range first
+            var defaultDates = getDefaultDateRange();
+            
+            // Initialize filters with default dates
+            currentFilters = {
+                status: '',
+                agent: '',
+                traffic_type: '',
+                campaign: '',
+                date_from: defaultDates.dateFrom,
+                date_to: defaultDates.dateTo,
+                search: ''
+            };
+            
+            // Load filters UI with default dates
+            loadFilters();
+            
+            // Load data with default dates
+            loadLeads();
+            loadCombinedConversionStats();
+            loadConversionTrend();
         });
         
         loadAllHotlineSelections();
