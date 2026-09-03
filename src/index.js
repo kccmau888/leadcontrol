@@ -1022,6 +1022,9 @@ async function handleGetClientLeads(request, env) {
 // ============================================
 // Admin Get Leads (MODIFIED - Uses Summary Table)
 // ============================================
+// ============================================
+// Admin Get Leads - WORKING VERSION (Reads all client counts)
+// ============================================
 async function handleAdminGetLeads(request, env) {
   try {
     const url = new URL(request.url);
@@ -1123,38 +1126,26 @@ async function handleAdminGetLeads(request, env) {
       name: row.campaign_name
     }));
     
-    // ===== OPTIMIZED: Get client counts ONLY for current page =====
-    const clientIds = dataResult.results
-      .map(row => row.client_id)
-      .filter(id => id && id !== '');
-
-    let clientCounts = {};
-    let verifiedClientIds = [];
-
-    if (clientIds.length > 0) {
-      const placeholders = clientIds.map(() => '?').join(',');
-      
-      // Get client counts for only these clients
-      const clientCountStmt = await env.lead_db.prepare(`
-        SELECT client_id, total_count as count 
-        FROM client_summary
-        WHERE client_id IN (${placeholders})
-      `);
-      const clientCountResult = await clientCountStmt.bind(...clientIds).all();
-      
-      for (const row of clientCountResult.results) {
-        clientCounts[row.client_id] = row.count;
-      }
-      
-      // Get verified clients for only these clients
-      const verifiedStmt = await env.lead_db.prepare(`
-        SELECT client_id 
-        FROM client_summary 
-        WHERE verified_count > 0 AND client_id IN (${placeholders})
-      `);
-      const verifiedResult = await verifiedStmt.bind(...clientIds).all();
-      verifiedClientIds = verifiedResult.results.map(r => r.client_id);
+    // ===== Get ALL client counts from summary table =====
+    const clientCountStmt = await env.lead_db.prepare(`
+      SELECT client_id, total_count as count FROM client_summary
+    `);
+    const clientCountResult = await clientCountStmt.all();
+    const clientCounts = {};
+    for (const row of clientCountResult.results) {
+      clientCounts[row.client_id] = row.count;
     }
+    
+    // ===== Get ALL verified clients from summary table =====
+    const verifiedClientsStmt = await env.lead_db.prepare(`
+      SELECT client_id FROM client_summary WHERE verified_count > 0
+    `);
+    const verifiedResult = await verifiedClientsStmt.all();
+    const verifiedClientIds = verifiedResult.results.map(r => r.client_id);
+    
+    console.log('Total leads found:', dataResult.results.length);
+    console.log('Client counts loaded:', Object.keys(clientCounts).length);
+    console.log('Verified clients loaded:', verifiedClientIds.length);
     
     return new Response(JSON.stringify({
       success: true,
