@@ -1101,17 +1101,17 @@ async function handleAdminGetLeads(request, env) {
     
     const dataResult = await dataStmt.bind(...params, limit, offset).all();
     
-    // ===== OPTIMIZED: Get agents from agents table =====
+    // ===== Get agents from agents table =====
     const agentsStmt = await env.lead_db.prepare(`
       SELECT agent_name FROM agents WHERE is_active = 1 ORDER BY agent_name
     `).all();
     
-    // ===== OPTIMIZED: Get traffic types from traffic_types table =====
+    // ===== Get traffic types from traffic_types table =====
     const trafficStmt = await env.lead_db.prepare(`
       SELECT traffic_type FROM traffic_types ORDER BY traffic_type
     `).all();
     
-    // ===== OPTIMIZED: Get campaigns from campaign table =====
+    // ===== Get campaigns from campaign table =====
     const campaignStmt = await env.lead_db.prepare(`
       SELECT campaign_id, campaign_name FROM campaign 
       WHERE campaign_name IS NOT NULL AND campaign_name != ''
@@ -1124,14 +1124,19 @@ async function handleAdminGetLeads(request, env) {
     }));
     
     // ===== OPTIMIZED: Get client counts ONLY for current page =====
-    // Extract client_ids from the 20 records
+    // Extract valid client_ids from the data results (filter out null, empty, or '-')
     const clientIds = dataResult.results
       .map(row => row.client_id)
-      .filter(id => id && id !== '-');
+      .filter(id => id && id !== '' && id !== '-' && id !== 'null');
     
     let clientCounts = {};
+    let verifiedClientIds = [];
+    
     if (clientIds.length > 0) {
+      // Build placeholders for IN clause
       const placeholders = clientIds.map(() => '?').join(',');
+      
+      // Get client counts
       const clientCountStmt = await env.lead_db.prepare(`
         SELECT client_id, total_count as count 
         FROM client_summary
@@ -1142,12 +1147,8 @@ async function handleAdminGetLeads(request, env) {
       for (const row of clientCountResult.results) {
         clientCounts[row.client_id] = row.count;
       }
-    }
-    
-    // ===== OPTIMIZED: Get verified clients ONLY for current page =====
-    let verifiedClientIds = [];
-    if (clientIds.length > 0) {
-      const placeholders = clientIds.map(() => '?').join(',');
+      
+      // Get verified clients
       const verifiedStmt = await env.lead_db.prepare(`
         SELECT client_id 
         FROM client_summary 
