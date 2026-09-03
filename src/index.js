@@ -1079,10 +1079,12 @@ async function handleAdminGetLeads(request, env) {
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
     
+    // ===== COUNT QUERY =====
     const countStmt = await env.lead_db.prepare(`SELECT COUNT(*) as total FROM leads l LEFT JOIN campaign c ON l.utm_id = c.campaign_id ${whereClause}`);
     const countResult = await countStmt.bind(...params).first();
     const total = countResult.total;
     
+    // ===== MAIN DATA QUERY =====
     const dataStmt = await env.lead_db.prepare(`
       SELECT l.id, l.client_id, l.user_ip, l.agent_name, l.agent_phone, l.click_type,
         l.rent, l.property_price, l.size, l.district, l.property_type,
@@ -1121,21 +1123,40 @@ async function handleAdminGetLeads(request, env) {
       name: row.campaign_name
     }));
     
-    // ===== SIMPLE VERSION: Query all client counts (but this is already fast with summary table) =====
-    const clientCountStmt = await env.lead_db.prepare(`
-      SELECT client_id, total_count as count FROM client_summary
-    `);
-    const clientCountResult = await clientCountStmt.all();
-    const clientCounts = {};
-    for (const row of clientCountResult.results) {
-      clientCounts[row.client_id] = row.count;
-    }
+    // ===== OPTIMIZED: Get client counts ONLY for current page =====
+    // Extract client_ids from the current page results
+    const clientIds = dataResult.results
+      .map(row => row.client_id)
+      .filter(id => id && id !== ''); // Filter out empty strings just in case
     
-    const verifiedClientsStmt = await env.lead_db.prepare(`
-      SELECT client_id FROM client_summary WHERE verified_count > 0
-    `);
-    const verifiedResult = await verifiedClientsStmt.all();
-    const verifiedClientIds = verifiedResult.results.map(r => r.client_id);
+    let clientCounts = {};
+    let verifiedClientIds = [];
+    
+    if (clientIds.length > 0) {
+      // Build placeholders for IN clause
+      const placeholders = clientIds.map(() => '?').join(',');
+      
+      // Get client counts for only these clients
+      const clientCountStmt = await env.lead_db.prepare(`
+        SELECT client_id, total_count as count 
+        FROM client_summary
+        WHERE client_id IN (${placeholders})
+      `);
+      const clientCountResult = await clientCountStmt.bind(...clientIds).all();
+      
+      for (const row of clientCountResult.results) {
+        clientCounts[row.client_id] = row.count;
+      }
+      
+      // Get verified clients for only these clients
+      const verifiedStmt = await env.lead_db.prepare(`
+        SELECT client_id 
+        FROM client_summary 
+        WHERE verified_count > 0 AND client_id IN (${placeholders})
+      `);
+      const verifiedResult = await verifiedStmt.bind(...clientIds).all();
+      verifiedClientIds = verifiedResult.results.map(r => r.client_id);
+    }
     
     return new Response(JSON.stringify({
       success: true,
