@@ -1124,16 +1124,14 @@ async function handleAdminGetLeads(request, env) {
     }));
     
     // ===== OPTIMIZED: Get client counts ONLY for current page =====
-    // Extract client_ids from the current page results
     const clientIds = dataResult.results
       .map(row => row.client_id)
-      .filter(id => id && id !== ''); // Filter out empty strings just in case
-    
+      .filter(id => id && id !== '');
+
     let clientCounts = {};
     let verifiedClientIds = [];
-    
+
     if (clientIds.length > 0) {
-      // Build placeholders for IN clause
       const placeholders = clientIds.map(() => '?').join(',');
       
       // Get client counts for only these clients
@@ -2124,6 +2122,7 @@ function renderTable(leads) {
   for (var i = 0; i < leads.length; i++) {
     var lead = leads[i];
     var frozen = isFrozen(lead.client_id, lead.status, verifiedClientIds);
+    
     var verifiedBy = lead.verified_by || '-';
     if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
     var verifiedAt = lead.verified_at ? new Date(lead.verified_at).toLocaleString() : '-';
@@ -2176,10 +2175,15 @@ function renderTable(leads) {
 
     var pageLocation = cutUrlBeforeQuestionMark(lead.page_location || '');   
     var landingPage = cutUrlBeforeQuestionMark(lead.landing_page || '');  
-    var leadCount = clientCounts[lead.client_id] || 0;
-    var hasMultipleLeads = leadCount > 1;
+    
+    // ===== UPDATED: Handle missing client counts =====
+    var leadCount = clientCounts[lead.client_id];
+    // If count is undefined or null, show '-' instead of 0
+    var countDisplay = (leadCount !== undefined && leadCount !== null) ? leadCount : '-';
+    var hasMultipleLeads = leadCount && leadCount > 1;
+    
     var clientDisplay = (hasMultipleLeads && lead.client_id && lead.client_id !== '-') 
-      ? '<span class="client-link" onclick="showClientLeads(\\'' + (lead.client_id || '') + '\\')">' + (lead.client_id || '-') + ' (' + leadCount + ')</span>'
+      ? '<span class="client-link" onclick="showClientLeads(\\'' + (lead.client_id || '') + '\\')">' + (lead.client_id || '-') + ' (' + countDisplay + ')</span>'
       : (lead.client_id || '-');
     
     var rowClass = frozen ? 'frozen-row' : '';
