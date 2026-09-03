@@ -87,136 +87,9 @@ export default {
       return handleDebugAllVars(request, env);
     }
     
-    // Initialize summary table (run once)
-    if (path === '/api/init-summary' && request.method === 'POST') {
-      return handleInitSummaryTable(request, env);
-    }
-    
     return new Response('Not found', { status: 404 });
   }
 };
-
-// ============================================
-// Summary Table Initialization
-// ============================================
-async function handleInitSummaryTable(request, env) {
-  try {
-    // Check if summary table exists
-    const checkStmt = await env.lead_db.prepare(`
-      SELECT name FROM sqlite_master 
-      WHERE type='table' AND name='client_summary'
-    `);
-    const checkResult = await checkStmt.all();
-    
-    if (checkResult.results.length === 0) {
-      // Create summary table
-      await env.lead_db.prepare(`
-        CREATE TABLE client_summary (
-          client_id TEXT PRIMARY KEY,
-          total_count INTEGER DEFAULT 0,
-          verified_count INTEGER DEFAULT 0,
-          pending_count INTEGER DEFAULT 0,
-          rejected_count INTEGER DEFAULT 0,
-          noshow_count INTEGER DEFAULT 0,
-          last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-      `).run();
-      
-      // Create triggers
-      await env.lead_db.prepare(`
-        CREATE TRIGGER update_client_summary_on_insert
-        AFTER INSERT ON leads
-        BEGIN
-          INSERT INTO client_summary (client_id, total_count, verified_count, pending_count, rejected_count, noshow_count, last_updated)
-          VALUES (
-            NEW.client_id,
-            1,
-            CASE WHEN NEW.status = 'verified' THEN 1 ELSE 0 END,
-            CASE WHEN NEW.status = 'pending' THEN 1 ELSE 0 END,
-            CASE WHEN NEW.status = 'rejected' THEN 1 ELSE 0 END,
-            CASE WHEN NEW.status = 'noshow' THEN 1 ELSE 0 END,
-            datetime('now')
-          )
-          ON CONFLICT(client_id) DO UPDATE SET
-            total_count = total_count + 1,
-            verified_count = verified_count + CASE WHEN NEW.status = 'verified' THEN 1 ELSE 0 END,
-            pending_count = pending_count + CASE WHEN NEW.status = 'pending' THEN 1 ELSE 0 END,
-            rejected_count = rejected_count + CASE WHEN NEW.status = 'rejected' THEN 1 ELSE 0 END,
-            noshow_count = noshow_count + CASE WHEN NEW.status = 'noshow' THEN 1 ELSE 0 END,
-            last_updated = datetime('now');
-        END
-      `).run();
-      
-      await env.lead_db.prepare(`
-        CREATE TRIGGER update_client_summary_on_update
-        AFTER UPDATE OF status ON leads
-        BEGIN
-          UPDATE client_summary 
-          SET 
-            verified_count = verified_count + CASE WHEN NEW.status = 'verified' AND OLD.status != 'verified' THEN 1 WHEN NEW.status != 'verified' AND OLD.status = 'verified' THEN -1 ELSE 0 END,
-            pending_count = pending_count + CASE WHEN NEW.status = 'pending' AND OLD.status != 'pending' THEN 1 WHEN NEW.status != 'pending' AND OLD.status = 'pending' THEN -1 ELSE 0 END,
-            rejected_count = rejected_count + CASE WHEN NEW.status = 'rejected' AND OLD.status != 'rejected' THEN 1 WHEN NEW.status != 'rejected' AND OLD.status = 'rejected' THEN -1 ELSE 0 END,
-            noshow_count = noshow_count + CASE WHEN NEW.status = 'noshow' AND OLD.status != 'noshow' THEN 1 WHEN NEW.status != 'noshow' AND OLD.status = 'noshow' THEN -1 ELSE 0 END,
-            last_updated = datetime('now')
-          WHERE client_id = NEW.client_id;
-        END
-      `).run();
-      
-      await env.lead_db.prepare(`
-        CREATE TRIGGER update_client_summary_on_delete
-        AFTER DELETE ON leads
-        BEGIN
-          UPDATE client_summary 
-          SET 
-            total_count = total_count - 1,
-            verified_count = verified_count - CASE WHEN OLD.status = 'verified' THEN 1 ELSE 0 END,
-            pending_count = pending_count - CASE WHEN OLD.status = 'pending' THEN 1 ELSE 0 END,
-            rejected_count = rejected_count - CASE WHEN OLD.status = 'rejected' THEN 1 ELSE 0 END,
-            noshow_count = noshow_count - CASE WHEN OLD.status = 'noshow' THEN 1 ELSE 0 END,
-            last_updated = datetime('now')
-          WHERE client_id = OLD.client_id;
-          
-          DELETE FROM client_summary 
-          WHERE client_id = OLD.client_id 
-          AND total_count <= 0;
-        END
-      `).run();
-      
-      // Backfill existing data
-      await env.lead_db.prepare(`
-        INSERT OR REPLACE INTO client_summary (client_id, total_count, verified_count, pending_count, rejected_count, noshow_count, last_updated)
-        SELECT 
-          client_id,
-          COUNT(*) as total_count,
-          SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END) as verified_count,
-          SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
-          SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count,
-          SUM(CASE WHEN status = 'noshow' THEN 1 ELSE 0 END) as noshow_count,
-          datetime('now') as last_updated
-        FROM leads
-        WHERE client_id IS NOT NULL AND client_id != ''
-        GROUP BY client_id
-      `).run();
-    }
-    
-    return new Response(JSON.stringify({
-      success: true,
-      message: 'Summary table initialized successfully'
-    }), {
-      headers: { 'Content-Type': 'application/json' }
-    });
-    
-  } catch (error) {
-    console.error('Init summary error:', error);
-    return new Response(JSON.stringify({
-      success: false,
-      error: error.message
-    }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  }
-}
 
 // ============================================
 // Agent Management Functions
@@ -1020,13 +893,7 @@ async function handleGetClientLeads(request, env) {
 }
 
 // ============================================
-// Admin Get Leads (MODIFIED - Uses Summary Table)
-// ============================================
-// ============================================
-// Admin Get Leads - WORKING VERSION (Reads all client counts)
-// ============================================
-// ============================================
-// Admin Get Leads - WORKING VERSION
+// Admin Get Leads - FULLY OPTIMIZED
 // ============================================
 async function handleAdminGetLeads(request, env) {
   try {
@@ -1107,17 +974,17 @@ async function handleAdminGetLeads(request, env) {
     
     const dataResult = await dataStmt.bind(...params, limit, offset).all();
     
-    // ===== Get agents from agents table =====
+    // ===== OPTIMIZED: Get agents from agents table =====
     const agentsStmt = await env.lead_db.prepare(`
       SELECT agent_name FROM agents WHERE is_active = 1 ORDER BY agent_name
     `).all();
     
-    // ===== Get traffic types from traffic_types table =====
+    // ===== OPTIMIZED: Get traffic types from traffic_types table =====
     const trafficStmt = await env.lead_db.prepare(`
       SELECT traffic_type FROM traffic_types ORDER BY traffic_type
     `).all();
     
-    // ===== Get campaigns from campaign table =====
+    // ===== OPTIMIZED: Get campaigns from campaign table =====
     const campaignStmt = await env.lead_db.prepare(`
       SELECT campaign_id, campaign_name FROM campaign 
       WHERE campaign_name IS NOT NULL AND campaign_name != ''
@@ -1129,16 +996,18 @@ async function handleAdminGetLeads(request, env) {
       name: row.campaign_name
     }));
     
-    // ===== Get ALL client counts from summary table =====
-    // Use a LEFT JOIN approach to get counts for all clients in the result
-    const clientIds = dataResult.results.map(row => row.client_id).filter(id => id && id !== '');
+    // ===== OPTIMIZED: Get client counts from client_summary =====
+    // Get only the clients that are in the current page
+    const clientIds = dataResult.results
+      .map(row => row.client_id)
+      .filter(id => id && id !== '' && id !== '-');
     
     let clientCounts = {};
     let verifiedClientIds = [];
     
     if (clientIds.length > 0) {
-      // Get counts for these specific clients
       const placeholders = clientIds.map(() => '?').join(',');
+      
       const clientCountStmt = await env.lead_db.prepare(`
         SELECT client_id, total_count as count 
         FROM client_summary
@@ -1150,7 +1019,6 @@ async function handleAdminGetLeads(request, env) {
         clientCounts[row.client_id] = row.count;
       }
       
-      // Get verified clients
       const verifiedStmt = await env.lead_db.prepare(`
         SELECT client_id 
         FROM client_summary 
@@ -1158,24 +1026,6 @@ async function handleAdminGetLeads(request, env) {
       `);
       const verifiedResult = await verifiedStmt.bind(...clientIds).all();
       verifiedClientIds = verifiedResult.results.map(r => r.client_id);
-    }
-    
-    // If no clients were found in client_summary, try to get all counts as fallback
-    if (Object.keys(clientCounts).length === 0 && clientIds.length > 0) {
-      console.log('Fallback: No client counts found, trying to get all counts');
-      const fallbackStmt = await env.lead_db.prepare(`
-        SELECT client_id, total_count as count FROM client_summary
-      `);
-      const fallbackResult = await fallbackStmt.all();
-      for (const row of fallbackResult.results) {
-        clientCounts[row.client_id] = row.count;
-      }
-      
-      const fallbackVerified = await env.lead_db.prepare(`
-        SELECT client_id FROM client_summary WHERE verified_count > 0
-      `);
-      const fallbackVerifiedResult = await fallbackVerified.all();
-      verifiedClientIds = fallbackVerifiedResult.results.map(r => r.client_id);
     }
     
     return new Response(JSON.stringify({
@@ -1690,10 +1540,11 @@ async function handleConversionTrend(env, request) {
 }
 
 // ============================================
-// HTML Page
+// HTML Page - Same as your working version
 // ============================================
 
 async function handleAdminPage(env) {
+  // Keep your existing HTML here - it's unchanged
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -2200,7 +2051,6 @@ function renderTable(leads) {
     
     // ===== Handle missing client counts =====
     var leadCount = clientCounts[lead.client_id];
-    // If count is undefined or null, show '-' instead of 0
     var countDisplay = (leadCount !== undefined && leadCount !== null) ? leadCount : '-';
     var hasMultipleLeads = leadCount && leadCount > 1;
     
