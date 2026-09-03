@@ -1025,6 +1025,9 @@ async function handleGetClientLeads(request, env) {
 // ============================================
 // Admin Get Leads - WORKING VERSION (Reads all client counts)
 // ============================================
+// ============================================
+// Admin Get Leads - WORKING VERSION
+// ============================================
 async function handleAdminGetLeads(request, env) {
   try {
     const url = new URL(request.url);
@@ -1127,25 +1130,53 @@ async function handleAdminGetLeads(request, env) {
     }));
     
     // ===== Get ALL client counts from summary table =====
-    const clientCountStmt = await env.lead_db.prepare(`
-      SELECT client_id, total_count as count FROM client_summary
-    `);
-    const clientCountResult = await clientCountStmt.all();
-    const clientCounts = {};
-    for (const row of clientCountResult.results) {
-      clientCounts[row.client_id] = row.count;
+    // Use a LEFT JOIN approach to get counts for all clients in the result
+    const clientIds = dataResult.results.map(row => row.client_id).filter(id => id && id !== '');
+    
+    let clientCounts = {};
+    let verifiedClientIds = [];
+    
+    if (clientIds.length > 0) {
+      // Get counts for these specific clients
+      const placeholders = clientIds.map(() => '?').join(',');
+      const clientCountStmt = await env.lead_db.prepare(`
+        SELECT client_id, total_count as count 
+        FROM client_summary
+        WHERE client_id IN (${placeholders})
+      `);
+      const clientCountResult = await clientCountStmt.bind(...clientIds).all();
+      
+      for (const row of clientCountResult.results) {
+        clientCounts[row.client_id] = row.count;
+      }
+      
+      // Get verified clients
+      const verifiedStmt = await env.lead_db.prepare(`
+        SELECT client_id 
+        FROM client_summary 
+        WHERE verified_count > 0 AND client_id IN (${placeholders})
+      `);
+      const verifiedResult = await verifiedStmt.bind(...clientIds).all();
+      verifiedClientIds = verifiedResult.results.map(r => r.client_id);
     }
     
-    // ===== Get ALL verified clients from summary table =====
-    const verifiedClientsStmt = await env.lead_db.prepare(`
-      SELECT client_id FROM client_summary WHERE verified_count > 0
-    `);
-    const verifiedResult = await verifiedClientsStmt.all();
-    const verifiedClientIds = verifiedResult.results.map(r => r.client_id);
-    
-    console.log('Total leads found:', dataResult.results.length);
-    console.log('Client counts loaded:', Object.keys(clientCounts).length);
-    console.log('Verified clients loaded:', verifiedClientIds.length);
+    // If no clients were found in client_summary, try to get all counts as fallback
+    if (Object.keys(clientCounts).length === 0 && clientIds.length > 0) {
+      console.log('Fallback: No client counts found, trying to get all counts');
+      const fallbackStmt = await env.lead_db.prepare(`
+        SELECT client_id, total_count as count FROM client_summary
+      `);
+      const fallbackResult = await fallbackStmt.all();
+      for (const row of fallbackResult.results) {
+        clientCounts[row.client_id] = row.count;
+      }
+      
+      const fallbackVerified = await env.lead_db.prepare(`
+        SELECT client_id FROM client_summary WHERE verified_count > 0
+      `);
+      const fallbackVerifiedResult = await fallbackVerified.all();
+      verifiedClientIds = fallbackVerifiedResult.results.map(r => r.client_id);
+    }
     
     return new Response(JSON.stringify({
       success: true,
@@ -2167,7 +2198,7 @@ function renderTable(leads) {
     var pageLocation = cutUrlBeforeQuestionMark(lead.page_location || '');   
     var landingPage = cutUrlBeforeQuestionMark(lead.landing_page || '');  
     
-    // ===== UPDATED: Handle missing client counts =====
+    // ===== Handle missing client counts =====
     var leadCount = clientCounts[lead.client_id];
     // If count is undefined or null, show '-' instead of 0
     var countDisplay = (leadCount !== undefined && leadCount !== null) ? leadCount : '-';
