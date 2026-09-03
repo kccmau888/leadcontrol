@@ -1022,6 +1022,7 @@ async function handleGetClientLeads(request, env) {
 // ============================================
 // Admin Get Leads (MODIFIED - Uses Summary Table)
 // ============================================
+
 async function handleAdminGetLeads(request, env) {
   try {
     const url = new URL(request.url);
@@ -1079,12 +1080,10 @@ async function handleAdminGetLeads(request, env) {
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
     
-    // ===== COUNT QUERY =====
     const countStmt = await env.lead_db.prepare(`SELECT COUNT(*) as total FROM leads l LEFT JOIN campaign c ON l.utm_id = c.campaign_id ${whereClause}`);
     const countResult = await countStmt.bind(...params).first();
     const total = countResult.total;
     
-    // ===== MAIN DATA QUERY =====
     const dataStmt = await env.lead_db.prepare(`
       SELECT l.id, l.client_id, l.user_ip, l.agent_name, l.agent_phone, l.click_type,
         l.rent, l.property_price, l.size, l.district, l.property_type,
@@ -1101,17 +1100,14 @@ async function handleAdminGetLeads(request, env) {
     
     const dataResult = await dataStmt.bind(...params, limit, offset).all();
     
-    // ===== OPTIMIZED: Get agents from agents table =====
     const agentsStmt = await env.lead_db.prepare(`
-      SELECT agent_name FROM agents WHERE is_active = 1 ORDER BY agent_name
+      SELECT DISTINCT agent_name FROM leads WHERE agent_name IS NOT NULL AND agent_name != ''
     `).all();
     
-    // ===== OPTIMIZED: Get traffic types from traffic_types table =====
     const trafficStmt = await env.lead_db.prepare(`
-      SELECT traffic_type FROM traffic_types ORDER BY traffic_type
+      SELECT DISTINCT traffic_type FROM leads WHERE traffic_type IS NOT NULL AND traffic_type != ''
     `).all();
     
-    // ===== OPTIMIZED: Get campaigns from campaign table =====
     const campaignStmt = await env.lead_db.prepare(`
       SELECT campaign_id, campaign_name FROM campaign 
       WHERE campaign_name IS NOT NULL AND campaign_name != ''
@@ -1123,39 +1119,24 @@ async function handleAdminGetLeads(request, env) {
       name: row.campaign_name
     }));
     
-    // ===== OPTIMIZED: Get client counts ONLY for current page =====
-    // Extract client_ids from the 20 records
-    const clientIds = dataResult.results
-      .map(row => row.client_id)
-      .filter(id => id && id !== '-');
-    
-    let clientCounts = {};
-    if (clientIds.length > 0) {
-      const placeholders = clientIds.map(() => '?').join(',');
-      const clientCountStmt = await env.lead_db.prepare(`
-        SELECT client_id, total_count as count 
-        FROM client_summary
-        WHERE client_id IN (${placeholders})
-      `);
-      const clientCountResult = await clientCountStmt.bind(...clientIds).all();
-      
-      for (const row of clientCountResult.results) {
-        clientCounts[row.client_id] = row.count;
-      }
+    // ===== USE SUMMARY TABLE INSTEAD OF EXPENSIVE QUERIES =====
+    const clientCountStmt = await env.lead_db.prepare(`
+      SELECT client_id, total_count as count 
+      FROM client_summary
+    `);
+    const clientCountResult = await clientCountStmt.all();
+    const clientCounts = {};
+    for (const row of clientCountResult.results) {
+      clientCounts[row.client_id] = row.count;
     }
     
-    // ===== OPTIMIZED: Get verified clients ONLY for current page =====
-    let verifiedClientIds = [];
-    if (clientIds.length > 0) {
-      const placeholders = clientIds.map(() => '?').join(',');
-      const verifiedStmt = await env.lead_db.prepare(`
-        SELECT client_id 
-        FROM client_summary 
-        WHERE verified_count > 0 AND client_id IN (${placeholders})
-      `);
-      const verifiedResult = await verifiedStmt.bind(...clientIds).all();
-      verifiedClientIds = verifiedResult.results.map(r => r.client_id);
-    }
+    const verifiedClientsStmt = await env.lead_db.prepare(`
+      SELECT client_id 
+      FROM client_summary 
+      WHERE verified_count > 0
+    `);
+    const verifiedResult = await verifiedClientsStmt.all();
+    const verifiedClientIds = verifiedResult.results.map(r => r.client_id);
     
     return new Response(JSON.stringify({
       success: true,
