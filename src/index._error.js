@@ -1385,7 +1385,7 @@ async function handleGetReinstatementLeads(request, env) {
 }
 
 // ============================================
-// Conversion Trend - FULLY OPTIMIZED with weekly/monthly
+// Conversion Trend - Supports Multiple Campaign Series
 // ============================================
 async function handleConversionTrend(env, request) {
   try {
@@ -1393,6 +1393,7 @@ async function handleConversionTrend(env, request) {
     let dateFrom = url.searchParams.get('date_from') || '';
     let dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
+    const selectedCampaigns = url.searchParams.get('campaigns') || '';
     
     if (!dateFrom || !dateTo) {
       const now = new Date();
@@ -1416,24 +1417,62 @@ async function handleConversionTrend(env, request) {
         groupByField = `stat_date`;
     }
 
-    // ONLY use verified (validated) conversions for the chart
-    const sql = `
-      SELECT 
-        ${groupByField} as period,
-        SUM(paid_verified) as paid_count,
-        SUM(organic_verified) as organic_count
-      FROM conversion_stats
-      WHERE stat_date >= date(?) AND stat_date <= date(?)
-      GROUP BY ${groupByField}
-      ORDER BY ${groupByField} ASC
-    `;
+    // Parse selected campaigns (comma-separated)
+    const campaignList = selectedCampaigns ? selectedCampaigns.split(',').filter(c => c && c !== '') : [];
+    
+    let sql;
+    let allParams = [...params];
+    
+    if (campaignList.length > 0) {
+      // Build query with multiple campaign filters using UNION
+      const campaignConditions = campaignList.map(() => 'campaign_id = ?').join(' OR ');
+      const campaignParams = [...campaignList];
+      allParams = [...params, ...campaignParams];
+      
+      sql = `
+        SELECT 
+          ${groupByField} as period,
+          campaign_id,
+          SUM(paid_verified) as paid_count,
+          SUM(organic_verified) as organic_count
+        FROM campaign_conversion_stats
+        WHERE stat_date >= date(?) AND stat_date <= date(?)
+          AND (${campaignConditions})
+        GROUP BY ${groupByField}, campaign_id
+        UNION ALL
+        SELECT 
+          ${groupByField} as period,
+          'Overall' as campaign_id,
+          SUM(paid_verified) as paid_count,
+          SUM(organic_verified) as organic_count
+        FROM conversion_stats
+        WHERE stat_date >= date(?) AND stat_date <= date(?)
+        GROUP BY ${groupByField}
+        ORDER BY period ASC, campaign_id
+      `;
+      // Add conversion_stats params
+      allParams = [...allParams, ...params];
+    } else {
+      // No campaign selected - just overall
+      sql = `
+        SELECT 
+          ${groupByField} as period,
+          'Overall' as campaign_id,
+          SUM(paid_verified) as paid_count,
+          SUM(organic_verified) as organic_count
+        FROM conversion_stats
+        WHERE stat_date >= date(?) AND stat_date <= date(?)
+        GROUP BY ${groupByField}
+        ORDER BY period ASC
+      `;
+    }
     
     const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.bind(...params).all();
+    const result = await stmt.bind(...allParams).all();
     
+    // Group results by period and campaign
     const periods = [];
-    const paidCounts = [];
-    const organicCounts = [];
+    const campaignData = {};
     
     for (const row of result.results) {
       let displayPeriod = row.period;
@@ -1445,18 +1484,30 @@ async function handleConversionTrend(env, request) {
         }
       }
       
-      periods.push(displayPeriod);
-      paidCounts.push(row.paid_count || 0);
-      organicCounts.push(row.organic_count || 0);
+      if (!periods.includes(displayPeriod)) {
+        periods.push(displayPeriod);
+      }
+      
+      const campaignName = row.campaign_id || 'Overall';
+      if (!campaignData[campaignName]) {
+        campaignData[campaignName] = {
+          paid: [],
+          organic: []
+        };
+      }
+      campaignData[campaignName].paid.push(row.paid_count || 0);
+      campaignData[campaignName].organic.push(row.organic_count || 0);
     }
     
-    return new Response(JSON.stringify({
+    // Build response
+    const response = {
       success: true,
       periods: periods,
-      paid: paidCounts,
-      organic: organicCounts,
-      groupBy: groupBy
-    }), {
+      groupBy: groupBy,
+      campaigns: campaignData
+    };
+    
+    return new Response(JSON.stringify(response), {
       headers: { 'Content-Type': 'application/json' }
     });
     
@@ -1552,6 +1603,7 @@ var selectedReinIds = new Set();
 var agentsList = [];
 var conversionChart = null;
 var currentGroupBy = 'day';
+var activeChartCampaigns = [];
 
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
@@ -1623,6 +1675,11 @@ function loadConversionTrend() {
   url += '&date_from=' + dateFrom;
   url += '&date_to=' + dateTo;
   
+  // Add active campaigns
+  if (activeChartCampaigns.length > 0) {
+    url += '&campaigns=' + activeChartCampaigns.join(',');
+  }
+  
   fetch(url)
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -1639,36 +1696,78 @@ function loadConversionTrend() {
         if (conversionChart) {
           conversionChart.destroy();
         }
+        
+        // Colors for different campaigns
+        var colors = [
+          { paid: '#1976d2', organic: '#2e7d32' },
+          { paid: '#e74c3c', organic: '#e67e22' },
+          { paid: '#9b59b6', organic: '#1abc9c' },
+          { paid: '#e91e63', organic: '#00bcd4' },
+          { paid: '#ff5722', organic: '#795548' },
+          { paid: '#607d8b', organic: '#cddc39' }
+        ];
+        
+        var datasets = [];
+        var colorIndex = 0;
+        var campaignKeys = Object.keys(data.campaigns);
+        
+        for (var i = 0; i < campaignKeys.length; i++) {
+          var campaignName = campaignKeys[i];
+          var campaignData = data.campaigns[campaignName];
+          var color = colors[colorIndex % colors.length];
+          colorIndex++;
+          
+          var isOverall = campaignName === 'Overall';
+          var dashPattern = isOverall ? [] : [5, 5];
+          var lineWidth = isOverall ? 2 : 1.5;
+          
+          // Paid dataset
+          datasets.push({
+            label: campaignName + ' (付费)',
+            data: campaignData.paid,
+            borderColor: color.paid,
+            backgroundColor: color.paid + '33',
+            borderWidth: lineWidth,
+            fill: false,
+            tension: 0.3,
+            borderDash: dashPattern,
+            pointRadius: isOverall ? 3 : 2,
+            pointHoverRadius: 5
+          });
+          
+          // Organic dataset
+          datasets.push({
+            label: campaignName + ' (自然)',
+            data: campaignData.organic,
+            borderColor: color.organic,
+            backgroundColor: color.organic + '33',
+            borderWidth: lineWidth,
+            fill: false,
+            tension: 0.3,
+            borderDash: dashPattern,
+            pointRadius: isOverall ? 3 : 2,
+            pointHoverRadius: 5
+          });
+        }
+        
         conversionChart = new Chart(ctx, {
           type: 'line',
           data: {
             labels: data.periods,
-            datasets: [
-              {
-                label: '付费转化',
-                data: data.paid,
-                borderColor: '#1976d2',
-                backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3
-              },
-              {
-                label: '自然转化',
-                data: data.organic,
-                borderColor: '#2e7d32',
-                backgroundColor: 'rgba(46, 125, 50, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3
-              }
-            ]
+            datasets: datasets
           },
           options: {
             responsive: true,
             maintainAspectRatio: true,
             plugins: {
-              legend: { position: 'top' },
+              legend: { 
+                position: 'top',
+                labels: {
+                  font: { size: 11 },
+                  boxWidth: 12,
+                  padding: 10
+                }
+              },
               tooltip: {
                 mode: 'index',
                 intersect: false,
@@ -1680,8 +1779,17 @@ function loadConversionTrend() {
               }
             },
             scales: {
-              y: { beginAtZero: true, title: { display: true, text: '转化数量' }, ticks: { stepSize: 1 } },
-              x: { title: { display: true, text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份') } }
+              y: { 
+                beginAtZero: true, 
+                title: { display: true, text: '转化数量' }, 
+                ticks: { stepSize: 1 } 
+              },
+              x: { 
+                title: { 
+                  display: true, 
+                  text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份') 
+                }
+              }
             }
           }
         });
@@ -2768,6 +2876,116 @@ function loadCombinedConversionStats() {
     .catch(function(err) {
       console.error('Load combined stats error:', err);
     });
+}
+
+// Load campaigns for chart dropdown
+function loadChartCampaigns() {
+  fetch('/api/leads?limit=1')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.success && data.filters && data.filters.campaigns) {
+        var select = document.getElementById('chartCampaignSelect');
+        if (!select) return;
+        
+        // Clear existing options (keep first option)
+        select.innerHTML = '<option value="">Select a campaign...</option>';
+        
+        for (var i = 0; i < data.filters.campaigns.length; i++) {
+          var campaign = data.filters.campaigns[i];
+          // Check if already active
+          if (activeChartCampaigns.indexOf(campaign.id) === -1) {
+            var option = document.createElement('option');
+            option.value = campaign.id;
+            option.textContent = campaign.name;
+            select.appendChild(option);
+          }
+        }
+      }
+    })
+    .catch(function(err) {
+      console.error("Load chart campaigns error:", err);
+    });
+}
+
+// Add campaign to chart
+function addCampaignToChart() {
+  var select = document.getElementById('chartCampaignSelect');
+  var campaignId = select.value;
+  
+  if (!campaignId) {
+    alert('请选择一个Campaign');
+    return;
+  }
+  
+  // Check if already added
+  if (activeChartCampaigns.indexOf(campaignId) !== -1) {
+    alert('该Campaign已在图表中');
+    return;
+  }
+  
+  // Get campaign name
+  var campaignName = select.options[select.selectedIndex].text;
+  
+  // Add to active list
+  activeChartCampaigns.push(campaignId);
+  
+  // Remove from dropdown
+  select.remove(select.selectedIndex);
+  
+  // Update active campaigns display
+  updateActiveCampaignsDisplay();
+  
+  // Reload chart
+  loadConversionTrend();
+}
+
+// Remove campaign from chart
+function removeCampaignFromChart(campaignId) {
+  // Remove from active list
+  var index = activeChartCampaigns.indexOf(campaignId);
+  if (index !== -1) {
+    activeChartCampaigns.splice(index, 1);
+  }
+  
+  // Reload campaign dropdown
+  loadChartCampaigns();
+  
+  // Update active campaigns display
+  updateActiveCampaignsDisplay();
+  
+  // Reload chart
+  loadConversionTrend();
+}
+
+// Update active campaigns display
+function updateActiveCampaignsDisplay() {
+  var container = document.getElementById('activeCampaigns');
+  if (!container) return;
+  
+  if (activeChartCampaigns.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+  
+  // Get campaign names
+  var select = document.getElementById('chartCampaignSelect');
+  var names = [];
+  
+  for (var i = 0; i < activeChartCampaigns.length; i++) {
+    var id = activeChartCampaigns[i];
+    // Find name from select (or fallback)
+    var name = id;
+    // Try to find in the select options
+    for (var j = 0; j < select.options.length; j++) {
+      if (select.options[j].value === id) {
+        name = select.options[j].text;
+        break;
+      }
+    }
+    names.push('<span style="display:inline-block;background:#e9ecef;padding:2px 8px;border-radius:12px;margin:2px 4px;font-size:12px;">' + name + ' <span style="cursor:pointer;color:#dc3545;" onclick="removeCampaignFromChart(\'' + id + '\')">✕</span></span>');
+  }
+  
+  container.innerHTML = 'Active: ' + names.join('');
 }
 
 function render() {
