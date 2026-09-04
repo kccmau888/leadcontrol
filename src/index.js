@@ -419,7 +419,7 @@ async function getGoogleAccessToken(serviceAccountJson) {
 }
 
 // ============================================
-// Combined Conversion Stats
+// Combined Conversion Stats - FULLY OPTIMIZED
 // ============================================
 async function handleCombinedConversionStats(env, request) {
   try {
@@ -1385,6 +1385,9 @@ async function handleGetReinstatementLeads(request, env) {
   }
 }
 
+// ============================================
+// Conversion Trend - FULLY OPTIMIZED with weekly/monthly
+// ============================================
 async function handleConversionTrend(env, request) {
   try {
     const url = new URL(request.url);
@@ -1400,14 +1403,28 @@ async function handleConversionTrend(env, request) {
       dateTo = now.toISOString().split('T')[0];
     }
 
+    let groupByField;
+    
+    switch (groupBy) {
+      case 'week':
+        groupByField = `strftime('%Y-W%W', stat_date)`;
+        break;
+      case 'month':
+        groupByField = `strftime('%Y-%m', stat_date)`;
+        break;
+      default:
+        groupByField = `stat_date`;
+    }
+
     const sql = `
       SELECT 
-        stat_date as period,
-        (paid_verified + paid_rejected + paid_noshow + paid_pending) as paid_count,
-        (organic_verified + organic_rejected + organic_noshow + organic_pending) as organic_count
+        ${groupByField} as period,
+        SUM(paid_verified + paid_rejected + paid_noshow + paid_pending) as paid_count,
+        SUM(organic_verified + organic_rejected + organic_noshow + organic_pending) as organic_count
       FROM conversion_stats
       WHERE stat_date >= date(?) AND stat_date <= date(?)
-      ORDER BY stat_date ASC
+      GROUP BY ${groupByField}
+      ORDER BY ${groupByField} ASC
     `;
     
     const stmt = await env.lead_db.prepare(sql);
@@ -1421,10 +1438,10 @@ async function handleConversionTrend(env, request) {
       let displayPeriod = row.period;
       
       if (groupBy === 'week') {
-        // For week grouping, we'll handle this in the frontend
-        displayPeriod = row.period;
-      } else if (groupBy === 'month') {
-        displayPeriod = row.period.substring(0, 7);
+        const match = row.period.match(/(\d{4})-W(\d+)/);
+        if (match) {
+          displayPeriod = `${match[1]} Week ${match[2]}`;
+        }
       }
       
       periods.push(displayPeriod);
