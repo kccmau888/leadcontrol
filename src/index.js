@@ -1404,6 +1404,7 @@ async function handleConversionTrend(env, request) {
     }
 
     let groupByField;
+    let params = [dateFrom, dateTo];
     
     switch (groupBy) {
       case 'week':
@@ -1416,11 +1417,12 @@ async function handleConversionTrend(env, request) {
         groupByField = `stat_date`;
     }
 
+    // ONLY use verified (validated) conversions for the chart
     const sql = `
       SELECT 
         ${groupByField} as period,
-        SUM(paid_verified + paid_rejected + paid_noshow + paid_pending) as paid_count,
-        SUM(organic_verified + organic_rejected + organic_noshow + organic_pending) as organic_count
+        SUM(paid_verified) as paid_count,
+        SUM(organic_verified) as organic_count
       FROM conversion_stats
       WHERE stat_date >= date(?) AND stat_date <= date(?)
       GROUP BY ${groupByField}
@@ -1428,7 +1430,7 @@ async function handleConversionTrend(env, request) {
     `;
     
     const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.bind(dateFrom, dateTo).all();
+    const result = await stmt.bind(...params).all();
     
     const periods = [];
     const paidCounts = [];
