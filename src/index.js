@@ -1385,7 +1385,7 @@ async function handleGetReinstatementLeads(request, env) {
 }
 
 // ============================================
-// Conversion Trend - Supports Multiple Campaign Series
+// Conversion Trend - FULLY OPTIMIZED with weekly/monthly
 // ============================================
 async function handleConversionTrend(env, request) {
   try {
@@ -1393,7 +1393,6 @@ async function handleConversionTrend(env, request) {
     let dateFrom = url.searchParams.get('date_from') || '';
     let dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
-    const selectedCampaigns = url.searchParams.get('campaigns') || '';
     
     if (!dateFrom || !dateTo) {
       const now = new Date();
@@ -1417,62 +1416,24 @@ async function handleConversionTrend(env, request) {
         groupByField = `stat_date`;
     }
 
-    // Parse selected campaigns (comma-separated)
-    const campaignList = selectedCampaigns ? selectedCampaigns.split(',').filter(c => c && c !== '') : [];
-    
-    let sql;
-    let allParams = [...params];
-    
-    if (campaignList.length > 0) {
-      // Build query with multiple campaign filters using UNION
-      const campaignConditions = campaignList.map(() => 'campaign_id = ?').join(' OR ');
-      const campaignParams = [...campaignList];
-      allParams = [...params, ...campaignParams];
-      
-      sql = `
-        SELECT 
-          ${groupByField} as period,
-          campaign_id,
-          SUM(paid_verified) as paid_count,
-          SUM(organic_verified) as organic_count
-        FROM campaign_conversion_stats
-        WHERE stat_date >= date(?) AND stat_date <= date(?)
-          AND (${campaignConditions})
-        GROUP BY ${groupByField}, campaign_id
-        UNION ALL
-        SELECT 
-          ${groupByField} as period,
-          'Overall' as campaign_id,
-          SUM(paid_verified) as paid_count,
-          SUM(organic_verified) as organic_count
-        FROM conversion_stats
-        WHERE stat_date >= date(?) AND stat_date <= date(?)
-        GROUP BY ${groupByField}
-        ORDER BY period ASC, campaign_id
-      `;
-      // Add conversion_stats params
-      allParams = [...allParams, ...params];
-    } else {
-      // No campaign selected - just overall
-      sql = `
-        SELECT 
-          ${groupByField} as period,
-          'Overall' as campaign_id,
-          SUM(paid_verified) as paid_count,
-          SUM(organic_verified) as organic_count
-        FROM conversion_stats
-        WHERE stat_date >= date(?) AND stat_date <= date(?)
-        GROUP BY ${groupByField}
-        ORDER BY period ASC
-      `;
-    }
+    // ONLY use verified (validated) conversions for the chart
+    const sql = `
+      SELECT 
+        ${groupByField} as period,
+        SUM(paid_verified) as paid_count,
+        SUM(organic_verified) as organic_count
+      FROM conversion_stats
+      WHERE stat_date >= date(?) AND stat_date <= date(?)
+      GROUP BY ${groupByField}
+      ORDER BY ${groupByField} ASC
+    `;
     
     const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.bind(...allParams).all();
+    const result = await stmt.bind(...params).all();
     
-    // Group results by period and campaign
     const periods = [];
-    const campaignData = {};
+    const paidCounts = [];
+    const organicCounts = [];
     
     for (const row of result.results) {
       let displayPeriod = row.period;
@@ -1484,30 +1445,18 @@ async function handleConversionTrend(env, request) {
         }
       }
       
-      if (!periods.includes(displayPeriod)) {
-        periods.push(displayPeriod);
-      }
-      
-      const campaignName = row.campaign_id || 'Overall';
-      if (!campaignData[campaignName]) {
-        campaignData[campaignName] = {
-          paid: [],
-          organic: []
-        };
-      }
-      campaignData[campaignName].paid.push(row.paid_count || 0);
-      campaignData[campaignName].organic.push(row.organic_count || 0);
+      periods.push(displayPeriod);
+      paidCounts.push(row.paid_count || 0);
+      organicCounts.push(row.organic_count || 0);
     }
     
-    // Build response
-    const response = {
+    return new Response(JSON.stringify({
       success: true,
       periods: periods,
-      groupBy: groupBy,
-      campaigns: campaignData
-    };
-    
-    return new Response(JSON.stringify(response), {
+      paid: paidCounts,
+      organic: organicCounts,
+      groupBy: groupBy
+    }), {
       headers: { 'Content-Type': 'application/json' }
     });
     
