@@ -435,66 +435,114 @@ async function handleCombinedConversionStats(env, request) {
       dateTo = now.toISOString().split('T')[0];
     }
     
-    const sql = `
+    let dateCondition = '';
+    let params = [];
+    
+    if (dateFrom && dateTo) {
+      dateCondition = ' AND date(created_at) >= date(?) AND date(created_at) <= date(?)';
+      params.push(dateFrom, dateTo);
+    } else if (dateFrom) {
+      dateCondition = ' AND date(created_at) >= date(?)';
+      params.push(dateFrom);
+    } else if (dateTo) {
+      dateCondition = ' AND date(created_at) <= date(?)';
+      params.push(dateTo);
+    }
+    
+    const paidSql = `
+      WITH paid AS (
+        SELECT value AS ConvValue
+        FROM (
+          SELECT 
+              value,
+              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
+          FROM leads
+          WHERE (gclid IS NOT NULL AND gclid != '') ${dateCondition}
+        )
+        WHERE rn = 1
+      )
       SELECT 
-        SUM(paid_verified) as paid_verified,
-        SUM(paid_rejected) as paid_rejected,
-        SUM(paid_noshow) as paid_noshow,
-        SUM(paid_pending) as paid_pending,
-        SUM(organic_verified) as organic_verified,
-        SUM(organic_rejected) as organic_rejected,
-        SUM(organic_noshow) as organic_noshow,
-        SUM(organic_pending) as organic_pending
-      FROM conversion_stats
-      WHERE stat_date >= date(?) AND stat_date <= date(?)
+        CASE 
+          WHEN ConvValue IS NULL THEN '-'
+          WHEN ConvValue = '0' THEN '0'
+          WHEN ConvValue = '1' THEN '1'
+          ELSE '>0'
+        END AS Conversion_Category,
+        COUNT(*) AS Record_Count
+      FROM paid
+      GROUP BY Conversion_Category
     `;
     
-    const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.bind(dateFrom, dateTo).first();
+    const nonpaidSql = `
+      WITH nonpaid AS (
+        SELECT value AS ConvValue
+        FROM (
+          SELECT 
+              value,
+              ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
+          FROM leads
+          WHERE (gclid IS NULL OR gclid = '') ${dateCondition}
+        )
+        WHERE rn = 1
+      )
+      SELECT 
+        CASE 
+          WHEN ConvValue IS NULL THEN '-'
+          WHEN ConvValue = '0' THEN '0'
+          WHEN ConvValue = '1' THEN '1'
+          ELSE '>0'
+        END AS Conversion_Category,
+        COUNT(*) AS Record_Count
+      FROM nonpaid
+      GROUP BY Conversion_Category
+    `;
     
-    const paidTotal = (result.paid_verified || 0) + (result.paid_rejected || 0) + (result.paid_noshow || 0) + (result.paid_pending || 0);
-    const organicTotal = (result.organic_verified || 0) + (result.organic_rejected || 0) + (result.organic_noshow || 0) + (result.organic_pending || 0);
+    const paidStmt = await env.lead_db.prepare(paidSql);
+    const paidResult = await paidStmt.bind(...params).all();
     
-    const stats = [
-      {
-        category: '-',
-        label: '未验证',
-        paid_count: result.paid_pending || 0,
-        paid_percent: paidTotal > 0 ? ((result.paid_pending || 0) * 100 / paidTotal).toFixed(1) + '%' : '0%',
-        nonpaid_count: result.organic_pending || 0,
-        nonpaid_percent: organicTotal > 0 ? ((result.organic_pending || 0) * 100 / organicTotal).toFixed(1) + '%' : '0%'
-      },
-      {
-        category: '0',
-        label: '无关查询',
-        paid_count: result.paid_rejected || 0,
-        paid_percent: paidTotal > 0 ? ((result.paid_rejected || 0) * 100 / paidTotal).toFixed(1) + '%' : '0%',
-        nonpaid_count: result.organic_rejected || 0,
-        nonpaid_percent: organicTotal > 0 ? ((result.organic_rejected || 0) * 100 / organicTotal).toFixed(1) + '%' : '0%'
-      },
-      {
-        category: '1',
-        label: '未有来电',
-        paid_count: result.paid_noshow || 0,
-        paid_percent: paidTotal > 0 ? ((result.paid_noshow || 0) * 100 / paidTotal).toFixed(1) + '%' : '0%',
-        nonpaid_count: result.organic_noshow || 0,
-        nonpaid_percent: organicTotal > 0 ? ((result.organic_noshow || 0) * 100 / organicTotal).toFixed(1) + '%' : '0%'
-      },
-      {
-        category: '>0',
-        label: '有效查询',
-        paid_count: result.paid_verified || 0,
-        paid_percent: paidTotal > 0 ? ((result.paid_verified || 0) * 100 / paidTotal).toFixed(1) + '%' : '0%',
-        nonpaid_count: result.organic_verified || 0,
-        nonpaid_percent: organicTotal > 0 ? ((result.organic_verified || 0) * 100 / organicTotal).toFixed(1) + '%' : '0%'
-      }
-    ];
+    const nonpaidStmt = await env.lead_db.prepare(nonpaidSql);
+    const nonpaidResult = await nonpaidStmt.bind(...params).all();
+    
+    const paidMap = {};
+    const nonpaidMap = {};
+    let paidTotal = 0;
+    let nonpaidTotal = 0;
+    
+    for (const row of paidResult.results) {
+      paidMap[row.Conversion_Category] = row.Record_Count;
+      paidTotal += row.Record_Count;
+    }
+    
+    for (const row of nonpaidResult.results) {
+      nonpaidMap[row.Conversion_Category] = row.Record_Count;
+      nonpaidTotal += row.Record_Count;
+    }
+    
+    const categories = ['-', '0', '1', '>0'];
+    const categoryLabels = {
+      '-': '未验证',
+      '0': '无关查询',
+      '1': '未有来电',
+      '>0': '有效查询'
+    };
+    
+    const stats = [];
+    for (const cat of categories) {
+      stats.push({
+        category: cat,
+        label: categoryLabels[cat],
+        paid_count: paidMap[cat] || 0,
+        paid_percent: paidTotal > 0 ? ((paidMap[cat] || 0) * 100 / paidTotal).toFixed(1) + '%' : '0%',
+        nonpaid_count: nonpaidMap[cat] || 0,
+        nonpaid_percent: nonpaidTotal > 0 ? ((nonpaidMap[cat] || 0) * 100 / nonpaidTotal).toFixed(1) + '%' : '0%'
+      });
+    }
     
     return new Response(JSON.stringify({
       success: true,
       stats: stats,
       paid_total: paidTotal,
-      nonpaid_total: organicTotal
+      nonpaid_total: nonpaidTotal
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -1400,18 +1448,58 @@ async function handleConversionTrend(env, request) {
       dateTo = now.toISOString().split('T')[0];
     }
 
+    let dateCondition = '';
+    let params = [];
+    
+    if (dateFrom && dateTo) {
+      dateCondition = "WHERE date(hk_created_at) >= ? AND date(hk_created_at) <= ?";
+      params.push(dateFrom, dateTo);
+    } else if (dateFrom) {
+      dateCondition = "WHERE date(hk_created_at) >= ?";
+      params.push(dateFrom);
+    } else if (dateTo) {
+      dateCondition = "WHERE date(hk_created_at) <= ?";
+      params.push(dateTo);
+    }
+    
+    let dateFormat;
+    switch (groupBy) {
+      case 'week':
+        dateFormat = `strftime('%Y-W%W', hk_created_at)`;
+        break;
+      case 'month':
+        dateFormat = `strftime('%Y-%m', hk_created_at)`;
+        break;
+      default:
+        dateFormat = `date(hk_created_at)`;
+    }
+    
     const sql = `
+      WITH converted_leads AS (
+        SELECT 
+          *,
+          datetime(created_at, '+8 hours') as hk_created_at,
+          ROW_NUMBER() OVER (PARTITION BY client_id ORDER BY verified_at DESC) as rn
+        FROM leads
+        WHERE value > 1
+      ),
+      filtered_conversions AS (
+        SELECT * 
+        FROM converted_leads
+        ${dateCondition}
+      )
       SELECT 
-        stat_date as period,
-        (paid_verified + paid_rejected + paid_noshow + paid_pending) as paid_count,
-        (organic_verified + organic_rejected + organic_noshow + organic_pending) as organic_count
-      FROM conversion_stats
-      WHERE stat_date >= date(?) AND stat_date <= date(?)
-      ORDER BY stat_date ASC
+        ${dateFormat} as period,
+        SUM(CASE WHEN (gclid IS NOT NULL AND gclid != '') THEN 1 ELSE 0 END) as paid_count,
+        SUM(CASE WHEN (gclid IS NULL OR gclid = '') THEN 1 ELSE 0 END) as organic_count
+      FROM filtered_conversions
+      WHERE rn = 1
+      GROUP BY period
+      ORDER BY period ASC
     `;
     
     const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.bind(dateFrom, dateTo).all();
+    const result = await stmt.bind(...params).all();
     
     const periods = [];
     const paidCounts = [];
@@ -1421,10 +1509,10 @@ async function handleConversionTrend(env, request) {
       let displayPeriod = row.period;
       
       if (groupBy === 'week') {
-        // For week grouping, we'll handle this in the frontend
-        displayPeriod = row.period;
-      } else if (groupBy === 'month') {
-        displayPeriod = row.period.substring(0, 7);
+        const match = row.period.match(/(\d{4})-W(\d+)/);
+        if (match) {
+          displayPeriod = `${match[1]} Week ${match[2]}`;
+        }
       }
       
       periods.push(displayPeriod);
