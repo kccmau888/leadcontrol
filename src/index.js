@@ -1385,7 +1385,7 @@ async function handleGetReinstatementLeads(request, env) {
 }
 
 // ============================================
-// Conversion Trend - Supports Multiple Campaign Series
+// Conversion Trend - FULLY OPTIMIZED with weekly/monthly
 // ============================================
 async function handleConversionTrend(env, request) {
   try {
@@ -1393,7 +1393,6 @@ async function handleConversionTrend(env, request) {
     let dateFrom = url.searchParams.get('date_from') || '';
     let dateTo = url.searchParams.get('date_to') || '';
     const groupBy = url.searchParams.get('group_by') || 'day';
-    const selectedCampaigns = url.searchParams.get('campaigns') || '';
     
     if (!dateFrom || !dateTo) {
       const now = new Date();
@@ -1404,6 +1403,7 @@ async function handleConversionTrend(env, request) {
     }
 
     let groupByField;
+    let params = [dateFrom, dateTo];
     
     switch (groupBy) {
       case 'week':
@@ -1416,68 +1416,24 @@ async function handleConversionTrend(env, request) {
         groupByField = `stat_date`;
     }
 
-    // Parse selected campaigns (comma-separated)
-    const campaignList = selectedCampaigns ? selectedCampaigns.split(',').filter(c => c && c !== '') : [];
-    
-    let sql;
-    let allParams = [];
-    
-    if (campaignList.length > 0) {
-      // Build query with multiple campaign filters
-      const campaignConditions = campaignList.map(() => 'campaign_id = ?').join(' OR ');
-      
-      sql = `
-        SELECT 
-          ${groupByField} as period,
-          campaign_id,
-          SUM(paid_verified) as paid_count,
-          SUM(organic_verified) as organic_count
-        FROM campaign_conversion_stats
-        WHERE stat_date >= date(?) AND stat_date <= date(?)
-          AND (${campaignConditions})
-        GROUP BY ${groupByField}, campaign_id
-        
-        UNION ALL
-        
-        SELECT 
-          ${groupByField} as period,
-          'Overall' as campaign_id,
-          SUM(paid_verified) as paid_count,
-          SUM(organic_verified) as organic_count
-        FROM conversion_stats
-        WHERE stat_date >= date(?) AND stat_date <= date(?)
-        GROUP BY ${groupByField}
-        
-        ORDER BY period ASC, campaign_id
-      `;
-      
-      // Build params: [dateFrom, dateTo, ...campaignList, dateFrom, dateTo]
-      allParams = [dateFrom, dateTo, ...campaignList, dateFrom, dateTo];
-    } else {
-      // No campaign selected - just overall
-      sql = `
-        SELECT 
-          ${groupByField} as period,
-          'Overall' as campaign_id,
-          SUM(paid_verified) as paid_count,
-          SUM(organic_verified) as organic_count
-        FROM conversion_stats
-        WHERE stat_date >= date(?) AND stat_date <= date(?)
-        GROUP BY ${groupByField}
-        ORDER BY period ASC
-      `;
-      allParams = [dateFrom, dateTo];
-    }
-    
-    console.log('SQL:', sql);
-    console.log('Params:', allParams);
+    // ONLY use verified (validated) conversions for the chart
+    const sql = `
+      SELECT 
+        ${groupByField} as period,
+        SUM(paid_verified) as paid_count,
+        SUM(organic_verified) as organic_count
+      FROM conversion_stats
+      WHERE stat_date >= date(?) AND stat_date <= date(?)
+      GROUP BY ${groupByField}
+      ORDER BY ${groupByField} ASC
+    `;
     
     const stmt = await env.lead_db.prepare(sql);
-    const result = await stmt.bind(...allParams).all();
+    const result = await stmt.bind(...params).all();
     
-    // Group results by period and campaign
     const periods = [];
-    const campaignData = {};
+    const paidCounts = [];
+    const organicCounts = [];
     
     for (const row of result.results) {
       let displayPeriod = row.period;
@@ -1489,44 +1445,18 @@ async function handleConversionTrend(env, request) {
         }
       }
       
-      if (!periods.includes(displayPeriod)) {
-        periods.push(displayPeriod);
-      }
-      
-      const campaignName = row.campaign_id || 'Overall';
-      if (!campaignData[campaignName]) {
-        campaignData[campaignName] = {
-          paid: [],
-          organic: []
-        };
-      }
-      // Ensure we have data for all periods
-      // Pad arrays to match periods length
-      while (campaignData[campaignName].paid.length < periods.length - 1) {
-        campaignData[campaignName].paid.push(0);
-        campaignData[campaignName].organic.push(0);
-      }
-      campaignData[campaignName].paid.push(row.paid_count || 0);
-      campaignData[campaignName].organic.push(row.organic_count || 0);
+      periods.push(displayPeriod);
+      paidCounts.push(row.paid_count || 0);
+      organicCounts.push(row.organic_count || 0);
     }
     
-    // Ensure all campaigns have the same number of data points
-    for (const [campaign, data] of Object.entries(campaignData)) {
-      while (data.paid.length < periods.length) {
-        data.paid.push(0);
-        data.organic.push(0);
-      }
-    }
-    
-    // Build response
-    const response = {
+    return new Response(JSON.stringify({
       success: true,
       periods: periods,
-      groupBy: groupBy,
-      campaigns: campaignData
-    };
-    
-    return new Response(JSON.stringify(response), {
+      paid: paidCounts,
+      organic: organicCounts,
+      groupBy: groupBy
+    }), {
       headers: { 'Content-Type': 'application/json' }
     });
     
@@ -1622,7 +1552,6 @@ var selectedReinIds = new Set();
 var agentsList = [];
 var conversionChart = null;
 var currentGroupBy = 'day';
-var activeChartCampaigns = [];
 
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
@@ -1653,93 +1582,6 @@ function getDefaultDateRange() {
     dateFrom: startDate.toISOString().split('T')[0],
     dateTo: endDate.toISOString().split('T')[0]
   };
-}
-
-// Load campaigns for chart dropdown
-function loadChartCampaigns() {
-  fetch('/api/leads?limit=1')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if (data.success && data.filters && data.filters.campaigns) {
-        var select = document.getElementById('chartCampaignSelect');
-        if (!select) return;
-        
-        select.innerHTML = '<option value="">Select a campaign...</option>';
-        
-        for (var i = 0; i < data.filters.campaigns.length; i++) {
-          var campaign = data.filters.campaigns[i];
-          if (activeChartCampaigns.indexOf(campaign.id) === -1) {
-            var option = document.createElement('option');
-            option.value = campaign.id;
-            option.textContent = campaign.name;
-            select.appendChild(option);
-          }
-        }
-      }
-    })
-    .catch(function(err) {
-      console.error("Load chart campaigns error:", err);
-    });
-}
-
-// Add campaign to chart
-function addCampaignToChart() {
-  var select = document.getElementById('chartCampaignSelect');
-  var campaignId = select.value;
-  
-  if (!campaignId) {
-    alert('请选择一个Campaign');
-    return;
-  }
-  
-  if (activeChartCampaigns.indexOf(campaignId) !== -1) {
-    alert('该Campaign已在图表中');
-    return;
-  }
-  
-  activeChartCampaigns.push(campaignId);
-  select.remove(select.selectedIndex);
-  updateActiveCampaignsDisplay();
-  loadConversionTrend();
-}
-
-// Remove campaign from chart
-function removeCampaignFromChart(campaignId) {
-  var index = activeChartCampaigns.indexOf(campaignId);
-  if (index !== -1) {
-    activeChartCampaigns.splice(index, 1);
-  }
-  loadChartCampaigns();
-  updateActiveCampaignsDisplay();
-  loadConversionTrend();
-}
-
-// Update active campaigns display
-function updateActiveCampaignsDisplay() {
-  var container = document.getElementById('activeCampaigns');
-  if (!container) return;
-  
-  if (activeChartCampaigns.length === 0) {
-    container.innerHTML = '';
-    return;
-  }
-  
-  var select = document.getElementById('chartCampaignSelect');
-  var names = [];
-  
-  for (var i = 0; i < activeChartCampaigns.length; i++) {
-    var id = activeChartCampaigns[i];
-    var name = id;
-    for (var j = 0; j < select.options.length; j++) {
-      if (select.options[j].value === id) {
-        name = select.options[j].text;
-        break;
-      }
-    }
-    names.push('<span style="display:inline-block;background:#e9ecef;padding:2px 8px;border-radius:12px;margin:2px 4px;font-size:12px;">' + name + ' <span style="cursor:pointer;color:#dc3545;" onclick="removeCampaignFromChart(\'' + id + '\')">✕</span></span>');
-  }
-  
-  container.innerHTML = 'Active: ' + names.join('');
 }
 
 function escapeHtml(str) {
@@ -1781,202 +1623,78 @@ function loadConversionTrend() {
   url += '&date_from=' + dateFrom;
   url += '&date_to=' + dateTo;
   
-  // Add active campaigns
-  if (activeChartCampaigns && activeChartCampaigns.length > 0) {
-    url += '&campaigns=' + activeChartCampaigns.join(',');
-  }
-  
-  console.log('Fetching chart data:', url);
-  
   fetch(url)
-    .then(function(r) { 
-      if (!r.ok) {
-        throw new Error('HTTP error: ' + r.status);
-      }
-      return r.json(); 
-    })
+    .then(function(r) { return r.json(); })
     .then(function(data) {
-      console.log('Chart data received:', data);
-      
       var canvas = document.getElementById('conversionChart');
-      if (!canvas) {
-        console.error('Canvas element not found!');
-        return;
-      }
+      if (!canvas) return;
       
       var parent = canvas.parentElement;
       var existingMsg = parent.querySelector('.no-data-msg');
       if (existingMsg) existingMsg.remove();
       canvas.style.display = 'block';
       
-      // Check if we have valid data
-      if (!data || !data.success) {
-        console.error('API returned error:', data);
-        canvas.style.display = 'none';
-        var msg = document.createElement('div');
-        msg.className = 'no-data-msg';
-        msg.innerHTML = '📊 数据加载失败<br><span style="font-size:12px;">' + (data ? data.error : '未知错误') + '</span>';
-        parent.appendChild(msg);
-        return;
-      }
-      
-      // Check if we have periods
-      if (!data.periods || data.periods.length === 0) {
-        console.log('No periods data available');
+      if (data.success && data.periods && data.periods.length > 0) {
+        var ctx = canvas.getContext('2d');
+        if (conversionChart) {
+          conversionChart.destroy();
+        }
+        conversionChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: data.periods,
+            datasets: [
+              {
+                label: '付费转化',
+                data: data.paid,
+                borderColor: '#1976d2',
+                backgroundColor: 'rgba(25, 118, 210, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3
+              },
+              {
+                label: '自然转化',
+                data: data.organic,
+                borderColor: '#2e7d32',
+                backgroundColor: 'rgba(46, 125, 50, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              legend: { position: 'top' },
+              tooltip: {
+                mode: 'index',
+                intersect: false,
+                callbacks: {
+                  label: function(context) {
+                    return context.dataset.label + ': ' + context.parsed.y + ' 个';
+                  }
+                }
+              }
+            },
+            scales: {
+              y: { beginAtZero: true, title: { display: true, text: '转化数量' }, ticks: { stepSize: 1 } },
+              x: { title: { display: true, text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份') } }
+            }
+          }
+        });
+      } else {
         canvas.style.display = 'none';
         var msg = document.createElement('div');
         msg.className = 'no-data-msg';
         msg.innerHTML = '📊 暂无有效转化数据<br><span style="font-size:12px;">请尝试其他日期范围</span>';
         parent.appendChild(msg);
-        return;
       }
-      
-      var ctx = canvas.getContext('2d');
-      if (conversionChart) {
-        conversionChart.destroy();
-        conversionChart = null;
-      }
-      
-      // Colors for different campaigns
-      var colors = [
-        { paid: '#1976d2', organic: '#2e7d32' },
-        { paid: '#e74c3c', organic: '#e67e22' },
-        { paid: '#9b59b6', organic: '#1abc9c' },
-        { paid: '#e91e63', organic: '#00bcd4' },
-        { paid: '#ff5722', organic: '#795548' },
-        { paid: '#607d8b', organic: '#cddc39' }
-      ];
-      
-      var datasets = [];
-      var colorIndex = 0;
-      
-      // Check if we have campaigns data
-      var campaignKeys = data.campaigns ? Object.keys(data.campaigns) : [];
-      
-      if (campaignKeys.length === 0) {
-        // No campaign data - create empty chart with message
-        console.log('No campaign data available, showing empty chart');
-        canvas.style.display = 'none';
-        var msg = document.createElement('div');
-        msg.className = 'no-data-msg';
-        msg.innerHTML = '📊 暂无转化数据<br><span style="font-size:12px;">请检查数据源</span>';
-        parent.appendChild(msg);
-        return;
-      }
-      
-      console.log('Campaign keys found:', campaignKeys);
-      
-      for (var i = 0; i < campaignKeys.length; i++) {
-        var campaignName = campaignKeys[i];
-        var campaignData = data.campaigns[campaignName];
-        
-        if (!campaignData) continue;
-        
-        var color = colors[colorIndex % colors.length];
-        colorIndex++;
-        
-        var isOverall = campaignName === 'Overall';
-        var dashPattern = isOverall ? [] : [5, 5];
-        var lineWidth = isOverall ? 2 : 1.5;
-        
-        // Paid dataset
-        datasets.push({
-          label: campaignName + ' (付费)',
-          data: campaignData.paid || [],
-          borderColor: color.paid,
-          backgroundColor: color.paid + '33',
-          borderWidth: lineWidth,
-          fill: false,
-          tension: 0.3,
-          borderDash: dashPattern,
-          pointRadius: isOverall ? 3 : 2,
-          pointHoverRadius: 5
-        });
-        
-        // Organic dataset
-        datasets.push({
-          label: campaignName + ' (自然)',
-          data: campaignData.organic || [],
-          borderColor: color.organic,
-          backgroundColor: color.organic + '33',
-          borderWidth: lineWidth,
-          fill: false,
-          tension: 0.3,
-          borderDash: dashPattern,
-          pointRadius: isOverall ? 3 : 2,
-          pointHoverRadius: 5
-        });
-      }
-      
-      if (datasets.length === 0) {
-        console.log('No datasets to render');
-        canvas.style.display = 'none';
-        var msg = document.createElement('div');
-        msg.className = 'no-data-msg';
-        msg.innerHTML = '📊 暂无数据可显示';
-        parent.appendChild(msg);
-        return;
-      }
-      
-      console.log('Creating chart with', datasets.length, 'datasets');
-      
-      conversionChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: data.periods,
-          datasets: datasets
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: true,
-          plugins: {
-            legend: { 
-              position: 'top',
-              labels: {
-                font: { size: 11 },
-                boxWidth: 12,
-                padding: 10
-              }
-            },
-            tooltip: {
-              mode: 'index',
-              intersect: false,
-              callbacks: {
-                label: function(context) {
-                  return context.dataset.label + ': ' + context.parsed.y + ' 个';
-                }
-              }
-            }
-          },
-          scales: {
-            y: { 
-              beginAtZero: true, 
-              title: { display: true, text: '转化数量' }, 
-              ticks: { stepSize: 1 } 
-            },
-            x: { 
-              title: { 
-                display: true, 
-                text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份') 
-              }
-            }
-          }
-        }
-      });
-      
-      console.log('Chart rendered successfully!');
     })
     .catch(function(err) {
       console.error('Load conversion trend error:', err);
-      var canvas = document.getElementById('conversionChart');
-      if (canvas) {
-        var parent = canvas.parentElement;
-        canvas.style.display = 'none';
-        var msg = document.createElement('div');
-        msg.className = 'no-data-msg';
-        msg.innerHTML = '❌ 加载失败: ' + err.message;
-        parent.appendChild(msg);
-      }
     });
 }
 
@@ -3055,52 +2773,40 @@ function loadCombinedConversionStats() {
 function render() {
   var app = document.getElementById('app');
   if (token) {
-    var html = [
-      '<div class="admin-box">',
-      '<div class="button-bar">',
-      '<div style="display:flex; gap:10px; align-items:center;">',
-      '<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>',
-      '<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>',
-      '<button class="btn btn-danger" onclick="logout()">退出登录</button>',
-      '</div>',
-      '</div>',
-      '<div class="stats-and-hotline-row">',
-      '<div class="chart-container">',
-      '<div class="chart-header">',
-      '<h4>📈 有效转化趋势 (付费 vs 自然)</h4>',
-      '<div class="chart-group-selector">',
-      '<button class="btn-group-btn active" data-group="day">按日</button>',
-      '<button class="btn-group-btn" data-group="week">按周</button>',
-      '<button class="btn-group-btn" data-group="month">按月</button>',
-      '</div>',
-      '</div>',
-      '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; background:#f8f9fa; padding:8px 12px; border-radius:6px;">',
-      '<label style="font-size:13px; font-weight:500; white-space:nowrap;">📊 Add Campaign:</label>',
-      '<select id="chartCampaignSelect" style="padding:6px 10px; border:1px solid #ddd; border-radius:4px; font-size:13px; min-width:180px;">',
-      '<option value="">Select a campaign...</option>',
-      '</select>',
-      '<button class="btn btn-primary btn-small" onclick="addCampaignToChart()" style="padding:4px 12px;">+ Add</button>',
-      '<span id="activeCampaigns" style="font-size:12px; color:#666; margin-left:5px;"></span>',
-      '</div>',
-      '<canvas id="conversionChart" style="width:100%; height:200px;"></canvas>',
-      '</div>',
-      '<div id="combinedStatsCard" class="combined-stats-container"></div>',
-      '<div class="hotline-card">',
-      '<div class="hotline-row">',
-      '<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>',
-      '<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>',
-      '<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>',
-      '<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>',
-      '</div>',
-      '</div>',
-      '</div>',
-      '<div id="filtersPanel"></div>',
-      '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>',
-      '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>',
-      '</div>'
-    ].join('');
-    
-    app.innerHTML = html;
+    app.innerHTML = '<div class="admin-box">' +
+      '<div class="button-bar">' +
+      '<div style="display:flex; gap:10px; align-items:center;">' +
+      '<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>' +
+      '<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>' +
+      '<button class="btn btn-danger" onclick="logout()">退出登录</button>' +
+      '</div>' +
+      '</div>' +
+      '<div class="stats-and-hotline-row">' +
+      '<div class="chart-container">' +
+      '<div class="chart-header">' +
+      '<h4>📈 有效转化趋势 (付费 vs 自然)</h4>' +
+      '<div class="chart-group-selector">' +
+      '<button class="btn-group-btn active" data-group="day">按日</button>' +
+      '<button class="btn-group-btn" data-group="week">按周</button>' +
+      '<button class="btn-group-btn" data-group="month">按月</button>' +
+      '</div>' +
+      '</div>' +
+      '<canvas id="conversionChart" style="width:800px; height:200px;"></canvas>' +
+      '</div>' +
+      '<div id="combinedStatsCard" class="combined-stats-container"></div>' +
+      '<div class="hotline-card">' +
+      '<div class="hotline-row">' +
+      '<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>' +
+      '<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>' +
+      '<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>' +
+      '<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>' +
+      '</div>' +
+      '</div>' +
+      '</div>' +
+      '<div id="filtersPanel"></div>' +
+      '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>' +
+      '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
+      '</div>';
 
     var groupBtns = document.querySelectorAll('.btn-group-btn');
     for (var i = 0; i < groupBtns.length; i++) {
@@ -3109,8 +2815,6 @@ function render() {
         setChartGroup(group);
       });
     }
-    
-    loadChartCampaigns();
     
     loadAgents().then(function() {
       var defaultDates = getDefaultDateRange();
@@ -3133,15 +2837,7 @@ function render() {
     
     loadAllHotlineSelections();
   } else {
-    app.innerHTML = [
-      '<div class="login-box">',
-      '<h2>LeasingHub 管理后台</h2>',
-      '<input type="text" id="phone" placeholder="手机号">',
-      '<input type="password" id="password" placeholder="密码">',
-      '<button onclick="login()">登录</button>',
-      '<div id="loginError" class="error"></div>',
-      '</div>'
-    ].join('');
+    app.innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
   }
 }
 
