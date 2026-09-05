@@ -1997,38 +1997,19 @@ function renderCampaignSummary(data) {
     return;
   }
   
+  // Build a simple list with totals
   var html = '';
   html += '<h4 style="margin:10px 0;font-size:14px;font-weight:600;">📋 各Campaign总有效转化</h4>';
-  html += '<div style="max-height:200px;overflow-y:auto;overflow-x:hidden;">';
-  html += '<table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">';
-  html += '<colgroup>';
-  html += '<col style="width:70%;">';
-  html += '<col style="width:30%;">';
-  html += '</colgroup>';
-  html += '<thead>';
-  html += '<tr style="background:#f8f9fa;border-bottom:2px solid #e0e0e0;position:sticky;top:0;z-index:10;">';
-  html += '<th style="padding:8px 12px;text-align:left;font-weight:600;">Campaign</th>';
-  html += '<th style="padding:8px 12px;text-align:right;font-weight:600;">总有效转化</th>';
-  html += '</tr>';
-  html += '</thead>';
-  html += '<tbody>';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:8px 20px;padding:8px 0;">';
   
   for (var i = 0; i < filteredSummary.length; i++) {
     var row = filteredSummary[i];
-    var bgColor = i % 2 === 0 ? '#ffffff' : '#f8f9fa';
     var rankEmoji = i === 0 ? ' 🥇' : (i === 1 ? ' 🥈' : (i === 2 ? ' 🥉' : ''));
-    html += '<tr style="background:' + bgColor + ';border-bottom:1px solid #eee;">';
-    html += '<td style="padding:6px 12px;text-align:left;font-weight:500;word-break:break-word;">' + escapeHtml(row.campaign_name) + rankEmoji + '</td>';
-    html += '<td style="padding:6px 12px;text-align:right;font-weight:600;word-break:break-word;">' + row.total + '</td>';
-    html += '</tr>';
+    html += '<span style="font-size:13px;font-weight:500;white-space:nowrap;">' + escapeHtml(row.campaign_name) + rankEmoji + ' (' + row.total + ')</span>';
   }
   
-  html += '</tbody>';
-  html += '</table>';
   html += '</div>';
-  html += '<div style="margin-top:6px;font-size:11px;color:#999;text-align:right;">';
-  html += '共 ' + filteredSummary.length + ' 个Campaign有数据 | ' + data.periods.length + ' 个时间段';
-  html += '</div>';
+  html += '<div style="margin-top:4px;font-size:11px;color:#999;">共 ' + filteredSummary.length + ' 个Campaign有数据 | ' + data.periods.length + ' 个时间段</div>';
   
   container.innerHTML = html;
 }
