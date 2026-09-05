@@ -1781,6 +1781,11 @@ function loadConversionTrend() {
   url += '&date_from=' + dateFrom;
   url += '&date_to=' + dateTo;
   
+  // Add active campaigns
+  if (activeChartCampaigns.length > 0) {
+    url += '&campaigns=' + activeChartCampaigns.join(',');
+  }
+  
   fetch(url)
     .then(function(r) { return r.json(); })
     .then(function(data) {
@@ -1797,36 +1802,78 @@ function loadConversionTrend() {
         if (conversionChart) {
           conversionChart.destroy();
         }
+        
+        // Colors for different campaigns
+        var colors = [
+          { paid: '#1976d2', organic: '#2e7d32' },
+          { paid: '#e74c3c', organic: '#e67e22' },
+          { paid: '#9b59b6', organic: '#1abc9c' },
+          { paid: '#e91e63', organic: '#00bcd4' },
+          { paid: '#ff5722', organic: '#795548' },
+          { paid: '#607d8b', organic: '#cddc39' }
+        ];
+        
+        var datasets = [];
+        var colorIndex = 0;
+        var campaignKeys = Object.keys(data.campaigns);
+        
+        for (var i = 0; i < campaignKeys.length; i++) {
+          var campaignName = campaignKeys[i];
+          var campaignData = data.campaigns[campaignName];
+          var color = colors[colorIndex % colors.length];
+          colorIndex++;
+          
+          var isOverall = campaignName === 'Overall';
+          var dashPattern = isOverall ? [] : [5, 5];
+          var lineWidth = isOverall ? 2 : 1.5;
+          
+          // Paid dataset
+          datasets.push({
+            label: campaignName + ' (付费)',
+            data: campaignData.paid,
+            borderColor: color.paid,
+            backgroundColor: color.paid + '33',
+            borderWidth: lineWidth,
+            fill: false,
+            tension: 0.3,
+            borderDash: dashPattern,
+            pointRadius: isOverall ? 3 : 2,
+            pointHoverRadius: 5
+          });
+          
+          // Organic dataset
+          datasets.push({
+            label: campaignName + ' (自然)',
+            data: campaignData.organic,
+            borderColor: color.organic,
+            backgroundColor: color.organic + '33',
+            borderWidth: lineWidth,
+            fill: false,
+            tension: 0.3,
+            borderDash: dashPattern,
+            pointRadius: isOverall ? 3 : 2,
+            pointHoverRadius: 5
+          });
+        }
+        
         conversionChart = new Chart(ctx, {
           type: 'line',
           data: {
             labels: data.periods,
-            datasets: [
-              {
-                label: '付费转化',
-                data: data.paid,
-                borderColor: '#1976d2',
-                backgroundColor: 'rgba(25, 118, 210, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3
-              },
-              {
-                label: '自然转化',
-                data: data.organic,
-                borderColor: '#2e7d32',
-                backgroundColor: 'rgba(46, 125, 50, 0.1)',
-                borderWidth: 2,
-                fill: true,
-                tension: 0.3
-              }
-            ]
+            datasets: datasets
           },
           options: {
             responsive: true,
             maintainAspectRatio: true,
             plugins: {
-              legend: { position: 'top' },
+              legend: { 
+                position: 'top',
+                labels: {
+                  font: { size: 11 },
+                  boxWidth: 12,
+                  padding: 10
+                }
+              },
               tooltip: {
                 mode: 'index',
                 intersect: false,
@@ -1838,8 +1885,17 @@ function loadConversionTrend() {
               }
             },
             scales: {
-              y: { beginAtZero: true, title: { display: true, text: '转化数量' }, ticks: { stepSize: 1 } },
-              x: { title: { display: true, text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份') } }
+              y: { 
+                beginAtZero: true, 
+                title: { display: true, text: '转化数量' }, 
+                ticks: { stepSize: 1 } 
+              },
+              x: { 
+                title: { 
+                  display: true, 
+                  text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份') 
+                }
+              }
             }
           }
         });
