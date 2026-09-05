@@ -3055,48 +3055,52 @@ function loadCombinedConversionStats() {
 function render() {
   var app = document.getElementById('app');
   if (token) {
-    app.innerHTML = '<div class="admin-box">' +
-      '<div class="button-bar">' +
-      '<div style="display:flex; gap:10px; align-items:center;">' +
-      '<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>' +
-      '<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>' +
-      '<button class="btn btn-danger" onclick="logout()">退出登录</button>' +
-      '</div>' +
-      '</div>' +
-      '<div class="stats-and-hotline-row">' +
-      '<div class="chart-container">' +
-      '<div class="chart-header">' +
-      '<h4>📈 有效转化趋势 (付费 vs 自然)</h4>' +
-      '<div class="chart-group-selector">' +
-      '<button class="btn-group-btn active" data-group="day">按日</button>' +
-      '<button class="btn-group-btn" data-group="week">按周</button>' +
-      '<button class="btn-group-btn" data-group="month">按月</button>' +
-      '</div>' +
-      '</div>' +
-      '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; background:#f8f9fa; padding:8px 12px; border-radius:6px;">' +
-      '<label style="font-size:13px; font-weight:500; white-space:nowrap;">📊 Add Campaign:</label>' +
-      '<select id="chartCampaignSelect" style="padding:6px 10px; border:1px solid #ddd; border-radius:4px; font-size:13px; min-width:180px;">' +
-      '<option value="">Select a campaign...</option>' +
-      '</select>' +
-      '<button class="btn btn-primary btn-small" onclick="addCampaignToChart()" style="padding:4px 12px;">+ Add</button>' +
-      '<span id="activeCampaigns" style="font-size:12px; color:#666; margin-left:5px;"></span>' +
-      '</div>' +
-      '<canvas id="conversionChart" style="width:100%; height:200px;"></canvas>' +
-      '</div>' +
-      '<div id="combinedStatsCard" class="combined-stats-container"></div>' +
-      '<div class="hotline-card">' +
-      '<div class="hotline-row">' +
-      '<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>' +
-      '<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>' +
-      '<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>' +
-      '<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>' +
-      '</div>' +
-      '</div>' +
-      '</div>' +
-      '<div id="filtersPanel"></div>' +
-      '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>' +
-      '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>' +
-      '</div>';
+    var html = [
+      '<div class="admin-box">',
+      '<div class="button-bar">',
+      '<div style="display:flex; gap:10px; align-items:center;">',
+      '<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>',
+      '<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>',
+      '<button class="btn btn-danger" onclick="logout()">退出登录</button>',
+      '</div>',
+      '</div>',
+      '<div class="stats-and-hotline-row">',
+      '<div class="chart-container">',
+      '<div class="chart-header">',
+      '<h4>📈 有效转化趋势 (付费 vs 自然)</h4>',
+      '<div class="chart-group-selector">',
+      '<button class="btn-group-btn active" data-group="day">按日</button>',
+      '<button class="btn-group-btn" data-group="week">按周</button>',
+      '<button class="btn-group-btn" data-group="month">按月</button>',
+      '</div>',
+      '</div>',
+      '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; background:#f8f9fa; padding:8px 12px; border-radius:6px;">',
+      '<label style="font-size:13px; font-weight:500; white-space:nowrap;">📊 Add Campaign:</label>',
+      '<select id="chartCampaignSelect" style="padding:6px 10px; border:1px solid #ddd; border-radius:4px; font-size:13px; min-width:180px;">',
+      '<option value="">Select a campaign...</option>',
+      '</select>',
+      '<button class="btn btn-primary btn-small" onclick="addCampaignToChart()" style="padding:4px 12px;">+ Add</button>',
+      '<span id="activeCampaigns" style="font-size:12px; color:#666; margin-left:5px;"></span>',
+      '</div>',
+      '<canvas id="conversionChart" style="width:100%; height:200px;"></canvas>',
+      '</div>',
+      '<div id="combinedStatsCard" class="combined-stats-container"></div>',
+      '<div class="hotline-card">',
+      '<div class="hotline-row">',
+      '<div class="hotline-item"><label>电话热线:</label><select id="hotlineTel" class="hotline-select"></select></div>',
+      '<div class="hotline-item"><label>表单热线:</label><select id="hotlineForm" class="hotline-select"></select></div>',
+      '<div class="hotline-item"><label>消息热线:</label><select id="hotlineMsg" class="hotline-select"></select></div>',
+      '<div><button class="btn btn-primary btn-small" onclick="updateAllHotlineSelections()">保存</button><span id="hotlineMsgSpan" class="hotline-msg"></span></div>',
+      '</div>',
+      '</div>',
+      '</div>',
+      '<div id="filtersPanel"></div>',
+      '<div id="tablePanel"><div style="text-align:center;padding:40px">加载中...</div></div>',
+      '<div id="paginationPanel" style="margin-top:20px;text-align:center"></div>',
+      '</div>'
+    ].join('');
+    
+    app.innerHTML = html;
 
     var groupBtns = document.querySelectorAll('.btn-group-btn');
     for (var i = 0; i < groupBtns.length; i++) {
@@ -3129,7 +3133,15 @@ function render() {
     
     loadAllHotlineSelections();
   } else {
-    app.innerHTML = '<div class="login-box"><h2>LeasingHub 管理后台</h2><input type="text" id="phone" placeholder="手机号"><input type="password" id="password" placeholder="密码"><button onclick="login()">登录</button><div id="loginError" class="error"></div></div>';
+    app.innerHTML = [
+      '<div class="login-box">',
+      '<h2>LeasingHub 管理后台</h2>',
+      '<input type="text" id="phone" placeholder="手机号">',
+      '<input type="password" id="password" placeholder="密码">',
+      '<button onclick="login()">登录</button>',
+      '<div id="loginError" class="error"></div>',
+      '</div>'
+    ].join('');
   }
 }
 
