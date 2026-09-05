@@ -1774,7 +1774,7 @@ function openCampaignPerformance() {
   modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;justify-content:center;align-items:center;';
   
   var html = '';
-  html += '<div style="background:white;border-radius:12px;width:95%;max-width:800px;max-height:90vh;overflow:auto;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">';
+  html += '<div style="background:white;border-radius:12px;width:95%;max-width:1200px;max-height:90vh;overflow:auto;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid #eee;">';
   html += '<h3 style="margin:0;">📊 Campaign Performance Trend</h3>';
   html += '<span style="font-size:28px;cursor:pointer;color:#999;line-height:1;">&times;</span>';
@@ -1999,6 +1999,59 @@ function renderCampaignSummary(data) {
   
   var html = '';
   html += '<h4 style="margin:10px 0;font-size:14px;font-weight:600;">📋 各Campaign总有效转化</h4>';
+  // The key: constrain the table width here, not the modal
+  html += '<div style="max-height:200px;overflow-y:auto;overflow-x:hidden;max-width:500px;margin:0 auto;">';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">';
+  html += '<colgroup>';
+  html += '<col style="width:70%;">';
+  html += '<col style="width:30%;">';
+  html += '</colgroup>';
+  html += '<thead>';
+  html += '<tr style="background:#f8f9fa;border-bottom:2px solid #e0e0e0;position:sticky;top:0;z-index:10;">';
+  html += '<th style="padding:8px 12px;text-align:left;">Campaign</th>';
+  html += '<th style="padding:8px 12px;text-align:right;">总有效转化</th>';
+  html += '</tr>';
+  html += '</thead>';
+  html += '<tbody>';
+  
+  for (var i = 0; i < filteredSummary.length; i++) {
+    var row = filteredSummary[i];
+    var bgColor = i % 2 === 0 ? '#ffffff' : '#f8f9fa';
+    var rankEmoji = i === 0 ? ' 🥇' : (i === 1 ? ' 🥈' : (i === 2 ? ' 🥉' : ''));
+    html += '<tr style="background:' + bgColor + ';border-bottom:1px solid #eee;">';
+    html += '<td style="padding:6px 12px;text-align:left;font-weight:500;word-break:break-word;">' + escapeHtml(row.campaign_name) + rankEmoji + '</td>';
+    html += '<td style="padding:6px 12px;text-align:right;font-weight:600;">' + row.total + '</td>';
+    html += '</tr>';
+  }
+  
+  html += '</tbody>';
+  html += '</table>';
+  html += '</div>';
+  html += '<div style="margin-top:6px;font-size:11px;color:#999;text-align:center;">';
+  html += '共 ' + filteredSummary.length + ' 个Campaign有数据 | ' + data.periods.length + ' 个时间段';
+  html += '</div>';
+  
+  container.innerHTML = html;
+}
+  
+function renderCampaignSummary_old(data) {
+  var container = document.getElementById('campaignSummaryContainer');
+  if (!container) return;
+  
+  if (!data.summary || data.summary.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无数据</div>';
+    return;
+  }
+  
+  var filteredSummary = data.summary.filter(function(item) { return item.total > 0; });
+  
+  if (filteredSummary.length === 0) {
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无有效转化数据</div>';
+    return;
+  }
+  
+  var html = '';
+  html += '<h4 style="margin:10px 0;font-size:14px;font-weight:600;">📋 各Campaign总有效转化</h4>';
   html += '<div style="max-height:200px;overflow-y:auto;">';
   html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
   html += '<thead>';
@@ -2025,49 +2078,6 @@ function renderCampaignSummary(data) {
   html += '<div style="margin-top:6px;font-size:11px;color:#999;text-align:right;">';
   html += '共 ' + filteredSummary.length + ' 个Campaign有数据 | ' + data.periods.length + ' 个时间段';
   html += '</div>';
-  
-  container.innerHTML = html;
-}
-
-function renderCampaignSummary_old(data) {
-  var container = document.getElementById('campaignSummaryContainer');
-  if (!container) return;
-  
-  if (!data.summary || data.summary.length === 0) {
-    container.innerHTML = '<div style="text-align:center;padding:20px;color:#999;">暂无数据</div>';
-    return;
-  }
-  
-  var html = 
-    '<h4 style="margin:8px 0;font-size:13px;font-weight:600;">📋 各Campaign总有效转化</h4>' +
-    '<div style="max-height:180px;overflow-y:auto;overflow-x:hidden;">' +
-      '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
-        '<thead>' +
-          '<tr style="background:#f8f9fa;border-bottom:1px solid #e0e0e0;position:sticky;top:0;z-index:10;">' +
-            '<th style="padding:4px 8px;text-align:left;">Campaign</th>' +
-            '<th style="padding:4px 8px;text-align:right;">总有效转化</th>' +
-          '</tr>' +
-        '</thead>' +
-        '<tbody>';
-  
-  for (var i = 0; i < data.summary.length; i++) {
-    var row = data.summary[i];
-    var bgColor = i % 2 === 0 ? '#ffffff' : '#f8f9fa';
-    var rankEmoji = i === 0 ? ' 🥇' : (i === 1 ? ' 🥈' : (i === 2 ? ' 🥉' : ''));
-    html += 
-      '<tr style="background:' + bgColor + ';border-bottom:1px solid #eee;">' +
-        '<td style="padding:6px 12px;text-align:left;font-weight:500;">' + escapeHtml(row.campaign_name) + rankEmoji + '</td>' +
-        '<td style="padding:6px 12px;text-align:right;font-weight:600;">' + row.total + '</td>' +
-      '</tr>';
-  }
-  
-  html += 
-        '</tbody>' +
-      '</table>' +
-    '</div>' +
-    '<div style="margin-top:6px;font-size:11px;color:#999;text-align:right;">' +
-      '共 ' + data.summary.length + ' 个Campaign | ' + data.periods.length + ' 个时间段' +
-    '</div>';
   
   container.innerHTML = html;
 }
