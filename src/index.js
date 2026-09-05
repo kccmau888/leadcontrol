@@ -1696,6 +1696,9 @@ var selectedReinIds = new Set();
 var agentsList = [];
 var conversionChart = null;
 var currentGroupBy = 'day';
+var campaignChart = null;
+var campaignGroupBy = 'day';
+var campaignData = null;
 
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
@@ -2008,7 +2011,7 @@ function renderCampaignSummary(data) {
   
   container.innerHTML = html;
 }
-  
+
 function loadConversionTrend() {
   var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
   var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
