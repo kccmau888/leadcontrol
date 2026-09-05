@@ -1782,133 +1782,201 @@ function loadConversionTrend() {
   url += '&date_to=' + dateTo;
   
   // Add active campaigns
-  if (activeChartCampaigns.length > 0) {
+  if (activeChartCampaigns && activeChartCampaigns.length > 0) {
     url += '&campaigns=' + activeChartCampaigns.join(',');
   }
   
+  console.log('Fetching chart data:', url);
+  
   fetch(url)
-    .then(function(r) { return r.json(); })
+    .then(function(r) { 
+      if (!r.ok) {
+        throw new Error('HTTP error: ' + r.status);
+      }
+      return r.json(); 
+    })
     .then(function(data) {
+      console.log('Chart data received:', data);
+      
       var canvas = document.getElementById('conversionChart');
-      if (!canvas) return;
+      if (!canvas) {
+        console.error('Canvas element not found!');
+        return;
+      }
       
       var parent = canvas.parentElement;
       var existingMsg = parent.querySelector('.no-data-msg');
       if (existingMsg) existingMsg.remove();
       canvas.style.display = 'block';
       
-      if (data.success && data.periods && data.periods.length > 0) {
-        var ctx = canvas.getContext('2d');
-        if (conversionChart) {
-          conversionChart.destroy();
-        }
-        
-        // Colors for different campaigns
-        var colors = [
-          { paid: '#1976d2', organic: '#2e7d32' },
-          { paid: '#e74c3c', organic: '#e67e22' },
-          { paid: '#9b59b6', organic: '#1abc9c' },
-          { paid: '#e91e63', organic: '#00bcd4' },
-          { paid: '#ff5722', organic: '#795548' },
-          { paid: '#607d8b', organic: '#cddc39' }
-        ];
-        
-        var datasets = [];
-        var colorIndex = 0;
-        var campaignKeys = Object.keys(data.campaigns);
-        
-        for (var i = 0; i < campaignKeys.length; i++) {
-          var campaignName = campaignKeys[i];
-          var campaignData = data.campaigns[campaignName];
-          var color = colors[colorIndex % colors.length];
-          colorIndex++;
-          
-          var isOverall = campaignName === 'Overall';
-          var dashPattern = isOverall ? [] : [5, 5];
-          var lineWidth = isOverall ? 2 : 1.5;
-          
-          // Paid dataset
-          datasets.push({
-            label: campaignName + ' (付费)',
-            data: campaignData.paid,
-            borderColor: color.paid,
-            backgroundColor: color.paid + '33',
-            borderWidth: lineWidth,
-            fill: false,
-            tension: 0.3,
-            borderDash: dashPattern,
-            pointRadius: isOverall ? 3 : 2,
-            pointHoverRadius: 5
-          });
-          
-          // Organic dataset
-          datasets.push({
-            label: campaignName + ' (自然)',
-            data: campaignData.organic,
-            borderColor: color.organic,
-            backgroundColor: color.organic + '33',
-            borderWidth: lineWidth,
-            fill: false,
-            tension: 0.3,
-            borderDash: dashPattern,
-            pointRadius: isOverall ? 3 : 2,
-            pointHoverRadius: 5
-          });
-        }
-        
-        conversionChart = new Chart(ctx, {
-          type: 'line',
-          data: {
-            labels: data.periods,
-            datasets: datasets
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: true,
-            plugins: {
-              legend: { 
-                position: 'top',
-                labels: {
-                  font: { size: 11 },
-                  boxWidth: 12,
-                  padding: 10
-                }
-              },
-              tooltip: {
-                mode: 'index',
-                intersect: false,
-                callbacks: {
-                  label: function(context) {
-                    return context.dataset.label + ': ' + context.parsed.y + ' 个';
-                  }
-                }
-              }
-            },
-            scales: {
-              y: { 
-                beginAtZero: true, 
-                title: { display: true, text: '转化数量' }, 
-                ticks: { stepSize: 1 } 
-              },
-              x: { 
-                title: { 
-                  display: true, 
-                  text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份') 
-                }
-              }
-            }
-          }
-        });
-      } else {
+      // Check if we have valid data
+      if (!data || !data.success) {
+        console.error('API returned error:', data);
+        canvas.style.display = 'none';
+        var msg = document.createElement('div');
+        msg.className = 'no-data-msg';
+        msg.innerHTML = '📊 数据加载失败<br><span style="font-size:12px;">' + (data ? data.error : '未知错误') + '</span>';
+        parent.appendChild(msg);
+        return;
+      }
+      
+      // Check if we have periods
+      if (!data.periods || data.periods.length === 0) {
+        console.log('No periods data available');
         canvas.style.display = 'none';
         var msg = document.createElement('div');
         msg.className = 'no-data-msg';
         msg.innerHTML = '📊 暂无有效转化数据<br><span style="font-size:12px;">请尝试其他日期范围</span>';
         parent.appendChild(msg);
+        return;
       }
+      
+      var ctx = canvas.getContext('2d');
+      if (conversionChart) {
+        conversionChart.destroy();
+        conversionChart = null;
+      }
+      
+      // Colors for different campaigns
+      var colors = [
+        { paid: '#1976d2', organic: '#2e7d32' },
+        { paid: '#e74c3c', organic: '#e67e22' },
+        { paid: '#9b59b6', organic: '#1abc9c' },
+        { paid: '#e91e63', organic: '#00bcd4' },
+        { paid: '#ff5722', organic: '#795548' },
+        { paid: '#607d8b', organic: '#cddc39' }
+      ];
+      
+      var datasets = [];
+      var colorIndex = 0;
+      
+      // Check if we have campaigns data
+      var campaignKeys = data.campaigns ? Object.keys(data.campaigns) : [];
+      
+      if (campaignKeys.length === 0) {
+        // No campaign data - create empty chart with message
+        console.log('No campaign data available, showing empty chart');
+        canvas.style.display = 'none';
+        var msg = document.createElement('div');
+        msg.className = 'no-data-msg';
+        msg.innerHTML = '📊 暂无转化数据<br><span style="font-size:12px;">请检查数据源</span>';
+        parent.appendChild(msg);
+        return;
+      }
+      
+      console.log('Campaign keys found:', campaignKeys);
+      
+      for (var i = 0; i < campaignKeys.length; i++) {
+        var campaignName = campaignKeys[i];
+        var campaignData = data.campaigns[campaignName];
+        
+        if (!campaignData) continue;
+        
+        var color = colors[colorIndex % colors.length];
+        colorIndex++;
+        
+        var isOverall = campaignName === 'Overall';
+        var dashPattern = isOverall ? [] : [5, 5];
+        var lineWidth = isOverall ? 2 : 1.5;
+        
+        // Paid dataset
+        datasets.push({
+          label: campaignName + ' (付费)',
+          data: campaignData.paid || [],
+          borderColor: color.paid,
+          backgroundColor: color.paid + '33',
+          borderWidth: lineWidth,
+          fill: false,
+          tension: 0.3,
+          borderDash: dashPattern,
+          pointRadius: isOverall ? 3 : 2,
+          pointHoverRadius: 5
+        });
+        
+        // Organic dataset
+        datasets.push({
+          label: campaignName + ' (自然)',
+          data: campaignData.organic || [],
+          borderColor: color.organic,
+          backgroundColor: color.organic + '33',
+          borderWidth: lineWidth,
+          fill: false,
+          tension: 0.3,
+          borderDash: dashPattern,
+          pointRadius: isOverall ? 3 : 2,
+          pointHoverRadius: 5
+        });
+      }
+      
+      if (datasets.length === 0) {
+        console.log('No datasets to render');
+        canvas.style.display = 'none';
+        var msg = document.createElement('div');
+        msg.className = 'no-data-msg';
+        msg.innerHTML = '📊 暂无数据可显示';
+        parent.appendChild(msg);
+        return;
+      }
+      
+      console.log('Creating chart with', datasets.length, 'datasets');
+      
+      conversionChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.periods,
+          datasets: datasets
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          plugins: {
+            legend: { 
+              position: 'top',
+              labels: {
+                font: { size: 11 },
+                boxWidth: 12,
+                padding: 10
+              }
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+              callbacks: {
+                label: function(context) {
+                  return context.dataset.label + ': ' + context.parsed.y + ' 个';
+                }
+              }
+            }
+          },
+          scales: {
+            y: { 
+              beginAtZero: true, 
+              title: { display: true, text: '转化数量' }, 
+              ticks: { stepSize: 1 } 
+            },
+            x: { 
+              title: { 
+                display: true, 
+                text: data.groupBy === 'day' ? '日期' : (data.groupBy === 'week' ? '周次' : '月份') 
+              }
+            }
+          }
+        }
+      });
+      
+      console.log('Chart rendered successfully!');
     })
     .catch(function(err) {
       console.error('Load conversion trend error:', err);
+      var canvas = document.getElementById('conversionChart');
+      if (canvas) {
+        var parent = canvas.parentElement;
+        canvas.style.display = 'none';
+        var msg = document.createElement('div');
+        msg.className = 'no-data-msg';
+        msg.innerHTML = '❌ 加载失败: ' + err.message;
+        parent.appendChild(msg);
+      }
     });
 }
 
