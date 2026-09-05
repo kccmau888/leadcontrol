@@ -3073,7 +3073,6 @@ function render() {
       '<button class="btn-group-btn" data-group="month">按月</button>' +
       '</div>' +
       '</div>' +
-      // ===== ADD CAMPAIGN DROPDOWN HERE =====
       '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; background:#f8f9fa; padding:8px 12px; border-radius:6px;">' +
       '<label style="font-size:13px; font-weight:500; white-space:nowrap;">📊 Add Campaign:</label>' +
       '<select id="chartCampaignSelect" style="padding:6px 10px; border:1px solid #ddd; border-radius:4px; font-size:13px; min-width:180px;">' +
@@ -3082,8 +3081,7 @@ function render() {
       '<button class="btn btn-primary btn-small" onclick="addCampaignToChart()" style="padding:4px 12px;">+ Add</button>' +
       '<span id="activeCampaigns" style="font-size:12px; color:#666; margin-left:5px;"></span>' +
       '</div>' +
-      // ===== END CAMPAIGN DROPDOWN =====
-      '<canvas id="conversionChart" style="width:800px; height:200px;"></canvas>' +
+      '<canvas id="conversionChart" style="width:100%; height:200px;"></canvas>' +
       '</div>' +
       '<div id="combinedStatsCard" class="combined-stats-container"></div>' +
       '<div class="hotline-card">' +
@@ -3108,7 +3106,6 @@ function render() {
       });
     }
     
-    // ===== LOAD CAMPAIGN DROPDOWN =====
     loadChartCampaigns();
     
     loadAgents().then(function() {
