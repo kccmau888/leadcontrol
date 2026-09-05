@@ -1759,11 +1759,6 @@ function formatCurrency(amount) {
 // ============================================
 // Campaign Performance Modal Functions
 // ============================================
-
-var campaignChart = null;
-var campaignGroupBy = 'day';
-var campaignData = null;
-
 function openCampaignPerformance() {
   var dateFrom = document.getElementById('filterDateFrom') ? document.getElementById('filterDateFrom').value : '';
   var dateTo = document.getElementById('filterDateTo') ? document.getElementById('filterDateTo').value : '';
