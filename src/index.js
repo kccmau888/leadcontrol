@@ -1999,14 +1999,13 @@ function renderCampaignSummary(data) {
   
   var html = '';
   html += '<h4 style="margin:10px 0;font-size:14px;font-weight:600;">📋 各Campaign总有效转化</h4>';
-  // Remove overflow-x:hidden and let it fill the space
-  html += '<div style="max-height:200px;overflow-y:auto;">';
+  // Set a max-width on the table container
+  html += '<div style="max-height:200px;overflow-y:auto;overflow-x:hidden;max-width:450px;margin:0 auto;">';
   html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
   html += '<thead>';
   html += '<tr style="background:#f8f9fa;border-bottom:2px solid #e0e0e0;position:sticky;top:0;z-index:10;">';
-  // Add width to th elements
-  html += '<th style="padding:8px 12px;text-align:left;width:70%;">Campaign</th>';
-  html += '<th style="padding:8px 12px;text-align:right;width:30%;">总有效转化</th>';
+  html += '<th style="padding:8px 12px;text-align:left;">Campaign</th>';
+  html += '<th style="padding:8px 12px;text-align:right;">总有效转化</th>';
   html += '</tr>';
   html += '</thead>';
   html += '<tbody>';
@@ -2024,13 +2023,13 @@ function renderCampaignSummary(data) {
   html += '</tbody>';
   html += '</table>';
   html += '</div>';
-  html += '<div style="margin-top:6px;font-size:11px;color:#999;text-align:right;">';
+  html += '<div style="margin-top:6px;font-size:11px;color:#999;text-align:center;">';
   html += '共 ' + filteredSummary.length + ' 个Campaign有数据 | ' + data.periods.length + ' 个时间段';
   html += '</div>';
   
   container.innerHTML = html;
 }
-  
+
 function renderCampaignSummary_old(data) {
   var container = document.getElementById('campaignSummaryContainer');
   if (!container) return;
