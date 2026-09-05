@@ -1778,28 +1778,29 @@ function openCampaignPerformance() {
   modal.id = 'campaignModal';
   modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;justify-content:center;align-items:center;';
   
-  modal.innerHTML = 
-    '<div style="background:white;border-radius:12px;width:95%;max-width:1200px;max-height:90vh;overflow:auto;padding:20px;font-family:-apple-system, BlinkMacSystemFont, sans-serif;">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid #eee;">' +
-        '<h3 style="margin:0;">📊 Campaign Performance Trend</h3>' +
-        '<span onclick="closeCampaignPerformance()" style="font-size:28px;cursor:pointer;color:#999;line-height:1;">&times;</span>' +
-      '</div>' +
-      '<div style="display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap;align-items:center;">' +
-        '<button class="btn-group-btn active" data-cgroup="day" onclick="setCampaignGroup(\'day\')">按日</button>' +
-        '<button class="btn-group-btn" data-cgroup="week" onclick="setCampaignGroup(\'week\')">按周</button>' +
-        '<button class="btn-group-btn" data-cgroup="month" onclick="setCampaignGroup(\'month\')">按月</button>' +
-        '<span style="margin-left:20px;font-size:12px;color:#666;align-self:center;">' + dateFrom + ' ~ ' + dateTo + '</span>' +
-      '</div>' +
-      '<div style="position:relative;height:350px;margin-bottom:20px;">' +
-        '<canvas id="campaignChart"></canvas>' +
-        '<div id="campaignLoading" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#999;">加载中...</div>' +
-      '</div>' +
-      '<div id="campaignSummaryContainer" style="margin-top:10px;overflow-x:auto;"></div>' +
-      '<div style="display:flex;justify-content:flex-end;margin-top:15px;padding-top:10px;border-top:1px solid #eee;">' +
-        '<button onclick="closeCampaignPerformance()" style="padding:8px 24px;background:#6c757d;color:white;border:none;border-radius:6px;cursor:pointer;">关闭</button>' +
-      '</div>' +
-    '</div>';
+  var html = '';
+  html += '<div style="background:white;border-radius:12px;width:95%;max-width:1200px;max-height:90vh;overflow:auto;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid #eee;">';
+  html += '<h3 style="margin:0;">📊 Campaign Performance Trend</h3>';
+  html += '<span onclick="closeCampaignPerformance()" style="font-size:28px;cursor:pointer;color:#999;line-height:1;">&times;</span>';
+  html += '</div>';
+  html += '<div style="display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap;align-items:center;">';
+  html += '<button class="btn-group-btn active" data-cgroup="day" onclick="setCampaignGroup(\'day\')">按日</button>';
+  html += '<button class="btn-group-btn" data-cgroup="week" onclick="setCampaignGroup(\'week\')">按周</button>';
+  html += '<button class="btn-group-btn" data-cgroup="month" onclick="setCampaignGroup(\'month\')">按月</button>';
+  html += '<span style="margin-left:20px;font-size:12px;color:#666;align-self:center;">' + dateFrom + ' ~ ' + dateTo + '</span>';
+  html += '</div>';
+  html += '<div style="position:relative;height:350px;margin-bottom:20px;">';
+  html += '<canvas id="campaignChart"></canvas>';
+  html += '<div id="campaignLoading" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#999;">加载中...</div>';
+  html += '</div>';
+  html += '<div id="campaignSummaryContainer" style="margin-top:10px;overflow-x:auto;"></div>';
+  html += '<div style="display:flex;justify-content:flex-end;margin-top:15px;padding-top:10px;border-top:1px solid #eee;">';
+  html += '<button onclick="closeCampaignPerformance()" style="padding:8px 24px;background:#6c757d;color:white;border:none;border-radius:6px;cursor:pointer;">关闭</button>';
+  html += '</div>';
+  html += '</div>';
   
+  modal.innerHTML = html;
   document.body.appendChild(modal);
   loadCampaignPerformance(dateFrom, dateTo, campaignGroupBy);
 }
