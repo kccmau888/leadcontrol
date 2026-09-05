@@ -1774,7 +1774,7 @@ function openCampaignPerformance() {
   modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;justify-content:center;align-items:center;';
   
   var html = '';
-  html += '<div style="background:white;border-radius:12px;width:95%;max-width:1200px;max-height:90vh;overflow:auto;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">';
+  html += '<div style="background:white;border-radius:12px;width:95%;max-width:800px;max-height:90vh;overflow:auto;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid #eee;">';
   html += '<h3 style="margin:0;">📊 Campaign Performance Trend</h3>';
   html += '<span style="font-size:28px;cursor:pointer;color:#999;line-height:1;">&times;</span>';
