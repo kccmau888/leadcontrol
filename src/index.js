@@ -1999,17 +1999,14 @@ function renderCampaignSummary(data) {
   
   var html = '';
   html += '<h4 style="margin:10px 0;font-size:14px;font-weight:600;">📋 各Campaign总有效转化</h4>';
-  // The key: constrain the table width here, not the modal
-  html += '<div style="max-height:200px;overflow-y:auto;overflow-x:hidden;max-width:500px;margin:0 auto;">';
-  html += '<table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed;">';
-  html += '<colgroup>';
-  html += '<col style="width:70%;">';
-  html += '<col style="width:30%;">';
-  html += '</colgroup>';
+  // Remove overflow-x:hidden and let it fill the space
+  html += '<div style="max-height:200px;overflow-y:auto;">';
+  html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
   html += '<thead>';
   html += '<tr style="background:#f8f9fa;border-bottom:2px solid #e0e0e0;position:sticky;top:0;z-index:10;">';
-  html += '<th style="padding:8px 12px;text-align:left;">Campaign</th>';
-  html += '<th style="padding:8px 12px;text-align:right;">总有效转化</th>';
+  // Add width to th elements
+  html += '<th style="padding:8px 12px;text-align:left;width:70%;">Campaign</th>';
+  html += '<th style="padding:8px 12px;text-align:right;width:30%;">总有效转化</th>';
   html += '</tr>';
   html += '</thead>';
   html += '<tbody>';
@@ -2019,7 +2016,7 @@ function renderCampaignSummary(data) {
     var bgColor = i % 2 === 0 ? '#ffffff' : '#f8f9fa';
     var rankEmoji = i === 0 ? ' 🥇' : (i === 1 ? ' 🥈' : (i === 2 ? ' 🥉' : ''));
     html += '<tr style="background:' + bgColor + ';border-bottom:1px solid #eee;">';
-    html += '<td style="padding:6px 12px;text-align:left;font-weight:500;word-break:break-word;">' + escapeHtml(row.campaign_name) + rankEmoji + '</td>';
+    html += '<td style="padding:6px 12px;text-align:left;font-weight:500;">' + escapeHtml(row.campaign_name) + rankEmoji + '</td>';
     html += '<td style="padding:6px 12px;text-align:right;font-weight:600;">' + row.total + '</td>';
     html += '</tr>';
   }
@@ -2027,7 +2024,7 @@ function renderCampaignSummary(data) {
   html += '</tbody>';
   html += '</table>';
   html += '</div>';
-  html += '<div style="margin-top:6px;font-size:11px;color:#999;text-align:center;">';
+  html += '<div style="margin-top:6px;font-size:11px;color:#999;text-align:right;">';
   html += '共 ' + filteredSummary.length + ' 个Campaign有数据 | ' + data.periods.length + ' 个时间段';
   html += '</div>';
   
