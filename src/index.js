@@ -1777,12 +1777,12 @@ function openCampaignPerformance() {
   html += '<div style="background:white;border-radius:12px;width:95%;max-width:1200px;max-height:90vh;overflow:auto;padding:20px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid #eee;">';
   html += '<h3 style="margin:0;">📊 Campaign Performance Trend</h3>';
-  html += '<span onclick="closeCampaignPerformance()" style="font-size:28px;cursor:pointer;color:#999;line-height:1;">&times;</span>';
+  html += '<span style="font-size:28px;cursor:pointer;color:#999;line-height:1;">&times;</span>';
   html += '</div>';
   html += '<div style="display:flex;gap:8px;margin-bottom:15px;flex-wrap:wrap;align-items:center;">';
-  html += '<button class="btn-group-btn active" data-cgroup="day" onclick="setCampaignGroup(\'day\')">按日</button>';
-  html += '<button class="btn-group-btn" data-cgroup="week" onclick="setCampaignGroup(\'week\')">按周</button>';
-  html += '<button class="btn-group-btn" data-cgroup="month" onclick="setCampaignGroup(\'month\')">按月</button>';
+  html += '<button class="btn-group-btn active" data-cgroup="day">按日</button>';
+  html += '<button class="btn-group-btn" data-cgroup="week">按周</button>';
+  html += '<button class="btn-group-btn" data-cgroup="month">按月</button>';
   html += '<span style="margin-left:20px;font-size:12px;color:#666;align-self:center;">' + dateFrom + ' ~ ' + dateTo + '</span>';
   html += '</div>';
   html += '<div style="position:relative;height:350px;margin-bottom:20px;">';
@@ -1791,12 +1791,28 @@ function openCampaignPerformance() {
   html += '</div>';
   html += '<div id="campaignSummaryContainer" style="margin-top:10px;overflow-x:auto;"></div>';
   html += '<div style="display:flex;justify-content:flex-end;margin-top:15px;padding-top:10px;border-top:1px solid #eee;">';
-  html += '<button onclick="closeCampaignPerformance()" style="padding:8px 24px;background:#6c757d;color:white;border:none;border-radius:6px;cursor:pointer;">关闭</button>';
+  html += '<button style="padding:8px 24px;background:#6c757d;color:white;border:none;border-radius:6px;cursor:pointer;">关闭</button>';
   html += '</div>';
   html += '</div>';
   
   modal.innerHTML = html;
   document.body.appendChild(modal);
+  
+  // Add event listeners using JavaScript (safe, no escaping issues)
+  var closeSpan = modal.querySelector('span');
+  if (closeSpan) closeSpan.onclick = closeCampaignPerformance;
+  
+  var closeButton = modal.querySelector('div:last-child button');
+  if (closeButton) closeButton.onclick = closeCampaignPerformance;
+  
+  var dayBtn = modal.querySelector('[data-cgroup="day"]');
+  var weekBtn = modal.querySelector('[data-cgroup="week"]');
+  var monthBtn = modal.querySelector('[data-cgroup="month"]');
+  
+  if (dayBtn) dayBtn.onclick = function() { setCampaignGroup('day'); };
+  if (weekBtn) weekBtn.onclick = function() { setCampaignGroup('week'); };
+  if (monthBtn) monthBtn.onclick = function() { setCampaignGroup('month'); };
+  
   loadCampaignPerformance(dateFrom, dateTo, campaignGroupBy);
 }
 
