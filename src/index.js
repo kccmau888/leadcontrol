@@ -90,6 +90,45 @@ export default {
   }
 };
 
+// Run all diagnostics
+async function runAllDiagnostics() {
+  console.log('🔍 === RUNNING ALL DIAGNOSTICS ===');
+  
+  // 1. Check API
+  console.log('\n1. Checking API...');
+  try {
+    const response = await fetch('/api/conversion-trend?date_from=2026-08-01&date_to=2026-09-05&group_by=day');
+    const data = await response.json();
+    console.log('✅ API Response:', data);
+  } catch (e) {
+    console.error('❌ API Error:', e);
+  }
+  
+  // 2. Check canvas
+  console.log('\n2. Checking canvas...');
+  const canvas = document.getElementById('conversionChart');
+  console.log(canvas ? '✅ Canvas found' : '❌ Canvas not found');
+  
+  // 3. Check Chart.js
+  console.log('\n3. Checking Chart.js...');
+  console.log(typeof Chart !== 'undefined' ? '✅ Chart.js loaded' : '❌ Chart.js not loaded');
+  
+  // 4. Check select
+  console.log('\n4. Checking campaign select...');
+  const select = document.getElementById('chartCampaignSelect');
+  console.log(select ? '✅ Select found' : '❌ Select not found');
+  
+  // 5. Check variables
+  console.log('\n5. Checking variables...');
+  console.log('conversionChart:', conversionChart);
+  console.log('currentGroupBy:', currentGroupBy);
+  console.log('activeChartCampaigns:', activeChartCampaigns);
+  
+  console.log('\n🔍 === DIAGNOSTICS COMPLETE ===');
+}
+
+runAllDiagnostics();
+
 // ============================================
 // Agent Management Functions
 // ============================================
