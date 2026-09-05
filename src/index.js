@@ -1991,13 +1991,13 @@ function renderCampaignSummary(data) {
   }
   
   var html = 
-    '<h4 style="margin:10px 0;font-size:14px;font-weight:600;">📋 各Campaign总有效转化</h4>' +
-    '<div style="overflow-x:auto;">' +
-      '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+    '<h4 style="margin:8px 0;font-size:13px;font-weight:600;">📋 各Campaign总有效转化</h4>' +
+    '<div style="max-height:180px;overflow-y:auto;overflow-x:hidden;">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
         '<thead>' +
-          '<tr style="background:#f8f9fa;border-bottom:2px solid #e0e0e0;">' +
-            '<th style="padding:8px 12px;text-align:left;">Campaign</th>' +
-            '<th style="padding:8px 12px;text-align:right;">总有效转化</th>' +
+          '<tr style="background:#f8f9fa;border-bottom:1px solid #e0e0e0;position:sticky;top:0;z-index:10;">' +
+            '<th style="padding:4px 8px;text-align:left;">Campaign</th>' +
+            '<th style="padding:4px 8px;text-align:right;">总有效转化</th>' +
           '</tr>' +
         '</thead>' +
         '<tbody>';
