@@ -1031,11 +1031,11 @@ async function handleAdminGetLeads(request, env) {
       params.push(campaignId);
     }
     if (dateFrom) {
-      whereConditions.push("date(datetime(l.created_at, '+8 hours')) >= date(?)");
+      whereConditions.push('date(l.created_at) >= date(?)');
       params.push(dateFrom);
     }
     if (dateTo) {
-      whereConditions.push("date(datetime(l.created_at, '+8 hours')) <= date(?)");
+      whereConditions.push('date(l.created_at) <= date(?)');
       params.push(dateTo);
     }
     if (search) {
