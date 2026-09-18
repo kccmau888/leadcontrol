@@ -2463,7 +2463,7 @@ function renderTable(leads) {
 
 function isFrozen(clientId, currentStatus, verifiedClientIdsList) {
   if (!clientId || clientId === '-') return false;
-  if (currentStatus === 'verified' || currentStatus === 'noshow') return false;
+  if (currentStatus === 'verified' || currentStatus === 'noshow' || currentStatus === 'listing') return false;
   return verifiedClientIdsList.indexOf(clientId) !== -1;
 }
 
