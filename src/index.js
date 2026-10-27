@@ -1752,6 +1752,23 @@ function escapeHtml(str) {
   });
 }
 
+function formatHKTime(dateString) {
+  if (!dateString) return '-';
+  // Parse the UTC string, add 8 hours
+  var d = new Date(new Date(dateString).getTime() + 8 * 60 * 60 * 1000);
+  
+  // Extract parts
+  var day = String(d.getUTCDate()).padStart(2, '0');
+  var month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  var year = d.getUTCFullYear();
+  
+  var hours = String(d.getUTCHours()).padStart(2, '0');
+  var minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  var seconds = String(d.getUTCSeconds()).padStart(2, '0');
+  
+  return day + '/' + month + '/' + year + ' ' + hours + ':' + minutes + ':' + seconds;
+}
+
 function formatCurrency(amount) {
   if (!amount || amount === '-' || amount === '' || amount === 'null' || amount === 'undefined') {
     return '-';
@@ -2360,7 +2377,7 @@ function renderTable(leads) {
     if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
     
     // Fix: force display time in Hong Kong time (UTC+8)
-    var verifiedAt = lead.verified_at ? new Date(new Date(lead.verified_at).getTime() + 8*3600*1000).toLocaleString('en-GB', { hour12: false }).replace(',', '') : '-';
+    var verifiedAt = formatHKTime(lead.verified_at);
     var isRent = true;
     if (lead.budget_range && lead.budget_range !== '' && lead.budget_range !== null) {
       isRent = !lead.budget_range.includes('m') && lead.budget_range !== '0' && lead.budget_range !== '1' && lead.budget_range !== 'listing';  // ← 修改：放盤不算 buy
@@ -2449,8 +2466,7 @@ function renderTable(leads) {
     html += '</select></td>';
     html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
     
-    // Fix: force display time in Hong Kong time (UTC+8)
-    html += '<td>' + new Date(new Date(lead.created_at).getTime() + 8*3600*1000).toLocaleString('en-GB', { hour12: false }).replace(',', '')  + '</td>';
+    html += '<td>' + formatHKTime(lead.created_at) + '</td>';
     html += '<td><select id="verified_by_' + lead.id + '" class="verified-by-select" data-lead-id="' + lead.id + '" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="">-</option>';
     for (var a = 0; a < agentsList.length; a++) {
@@ -2538,8 +2554,8 @@ function showClientLeads(clientId) {
           if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
           
           // Fix: force display time in Hong Kong time (UTC+8)
-          var verifiedAt = lead.verified_at ? new Date(new Date(lead.verified_at).getTime() + 8*3600*1000).toLocaleString('en-GB', { hour12: false }).replace(',', '')  : '-';
-          var createdAt = lead.created_at ? new Date(new Date(lead.created_at).getTime() + 8*3600*1000).toLocaleString('en-GB', { hour12: false }).replace(',', '')  : '-';
+          var verifiedAt = formatHKTime(lead.verified_at);
+          var createdAt = formatHKTime(lead.created_at);
           var valueDisplay = (lead.value === null || lead.value === undefined) ? '-' : lead.value;
           
           html += '<tr>';
