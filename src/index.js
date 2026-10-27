@@ -2360,8 +2360,7 @@ function renderTable(leads) {
     if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
     
     // Fix: force display time in Hong Kong time (UTC+8)
-    var verifiedAt = lead.verified_at ? new Date(new Date(lead.verified_at + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
-
+    var verifiedAt = lead.verified_at ? new Date(new Date(lead.verified_at.replace(' ', 'T') + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
     var isRent = true;
     if (lead.budget_range && lead.budget_range !== '' && lead.budget_range !== null) {
       isRent = !lead.budget_range.includes('m') && lead.budget_range !== '0' && lead.budget_range !== '1' && lead.budget_range !== 'listing';  // ← 修改：放盤不算 buy
@@ -2451,8 +2450,7 @@ function renderTable(leads) {
     html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
     
     // Fix: force display time in Hong Kong time (UTC+8)
-    html += '<td>' + new Date(new Date(lead.created_at + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') + '</td>';
-    
+    html += '<td>' + new Date(new Date(lead.created_at.replace(' ', 'T') + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') + '</td>';
     html += '<td><select id="verified_by_' + lead.id + '" class="verified-by-select" data-lead-id="' + lead.id + '" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="">-</option>';
     for (var a = 0; a < agentsList.length; a++) {
@@ -2540,9 +2538,8 @@ function showClientLeads(clientId) {
           if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
           
           // Fix: force display time in Hong Kong time (UTC+8)
-          var verifiedAt = lead.verified_at ? new Date(new Date(lead.verified_at + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
-          var createdAt = lead.created_at ? new Date(new Date(lead.created_at + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
-          
+          var verifiedAt = lead.verified_at ? new Date(new Date(lead.verified_at.replace(' ', 'T') + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
+          var createdAt = lead.created_at ? new Date(new Date(lead.created_at.replace(' ', 'T') + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
           var valueDisplay = (lead.value === null || lead.value === undefined) ? '-' : lead.value;
           
           html += '<tr>';
