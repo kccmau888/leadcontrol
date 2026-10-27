@@ -1737,17 +1737,25 @@ function escapeHtml(str) {
 
 function formatHKTime(dateString) {
   if (!dateString) return '-';
-  // Parse the UTC string, add 8 hours
-  var d = new Date(new Date(dateString).getTime() + 8 * 60 * 60 * 1000);
   
-  // Extract parts
-  var day = String(d.getUTCDate()).padStart(2, '0');
-  var month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  var year = d.getUTCFullYear();
+  // Clean the string: replace space with T, ensure it ends with Z (UTC)
+  var cleanStr = dateString.replace(' ', 'T');
+  if (!cleanStr.endsWith('Z')) cleanStr += 'Z';
   
-  var hours = String(d.getUTCHours()).padStart(2, '0');
-  var minutes = String(d.getUTCMinutes()).padStart(2, '0');
-  var seconds = String(d.getUTCSeconds()).padStart(2, '0');
+  // Parse as UTC timestamp
+  var d = new Date(cleanStr);
+  
+  // Add 8 hours (Hong Kong time)
+  var hkTime = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+  
+  // Extract parts manually using UTC methods (since we already shifted the time)
+  var day = String(hkTime.getUTCDate()).padStart(2, '0');
+  var month = String(hkTime.getUTCMonth() + 1).padStart(2, '0');
+  var year = hkTime.getUTCFullYear();
+  
+  var hours = String(hkTime.getUTCHours()).padStart(2, '0');
+  var minutes = String(hkTime.getUTCMinutes()).padStart(2, '0');
+  var seconds = String(hkTime.getUTCSeconds()).padStart(2, '0');
   
   return day + '/' + month + '/' + year + ' ' + hours + ':' + minutes + ':' + seconds;
 }
