@@ -565,11 +565,11 @@ async function handleAdminGetLeads(request, env) {
     if (campaignId) { whereConditions.push('c.campaign_id = ?'); params.push(campaignId); }
     
     if (dateFrom) {
-      whereConditions.push("l.created_at >= datetime(?, '-8 hours')");
+      whereConditions.push("datetime(substr(l.created_at, 1, 19)) >= datetime(?, '-8 hours')");
       params.push(dateFrom + " 00:00:00");
     }
     if (dateTo) {
-      whereConditions.push("l.created_at <= datetime(?, '-8 hours')");
+      whereConditions.push("datetime(substr(l.created_at, 1, 19)) <= datetime(?, '-8 hours')");
       params.push(dateTo + " 23:59:59");
     }
     
