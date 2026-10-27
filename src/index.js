@@ -995,6 +995,7 @@ async function handleAdminGetLeads(request, env) {
     const page = parseInt(url.searchParams.get('page')) || 1;
     const limit = parseInt(url.searchParams.get('limit')) || 20;
     const offset = (page - 1) * limit;
+    const includeFilters = url.searchParams.get('include_filters') === 'true';
     
     const status = url.searchParams.get('status') || '';
     const noshow = url.searchParams.get('noshow') === 'true';
@@ -1030,14 +1031,17 @@ async function handleAdminGetLeads(request, env) {
       whereConditions.push('c.campaign_id = ?');
       params.push(campaignId);
     }
+    
+    // OPTIMIZED: Direct comparison allows index usage and fewer reads
     if (dateFrom) {
-      whereConditions.push("date(l.created_at, '+8 hours') >= date(?)");
-      params.push(dateFrom);
+      whereConditions.push("l.created_at >= datetime(?, '-8 hours')");
+      params.push(dateFrom + " 00:00:00");
     }
     if (dateTo) {
-      whereConditions.push("date(l.created_at, '+8 hours') <= date(?)");
-      params.push(dateTo);
+      whereConditions.push("l.created_at <= datetime(?, '-8 hours')");
+      params.push(dateTo + " 23:59:59");
     }
+    
     if (search) {
       whereConditions.push('(l.client_id LIKE ? OR l.agent_name LIKE ? OR l.district LIKE ?)');
       params.push('%' + search + '%', '%' + search + '%', '%' + search + '%');
@@ -1045,21 +1049,28 @@ async function handleAdminGetLeads(request, env) {
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
     
-    // ===== COUNT QUERY =====
-    const countStmt = await env.lead_db.prepare(`SELECT COUNT(*) as total FROM leads l LEFT JOIN campaign c ON l.utm_id = c.campaign_id ${whereClause}`);
+    // ===== OPTIMIZED COUNT QUERY =====
+    // Only join campaign if we are actually filtering by it
+    let countSql = `SELECT COUNT(*) as total FROM leads l`;
+    if (campaignId) {
+      countSql = `SELECT COUNT(*) as total FROM leads l LEFT JOIN campaign c ON l.utm_id = c.campaign_id`;
+    }
+    const countStmt = await env.lead_db.prepare(`${countSql} ${whereClause}`);
     const countResult = await countStmt.bind(...params).first();
     const total = countResult.total;
     
-    // ===== MAIN DATA QUERY =====
+    // ===== MAIN DATA QUERY (Joins client_summary to save extra queries) =====
     const dataStmt = await env.lead_db.prepare(`
       SELECT l.id, l.client_id, l.user_ip, l.agent_name, l.agent_phone, l.click_type,
         l.rent, l.property_price, l.size, l.district, l.property_type,
         l.landing_page, l.page_location,
         l.utm_source, l.utm_medium, l.utm_campaign, l.gclid,
         l.traffic_type, l.traffic_source, c.campaign_name,
-        l.value, l.status, l.verified_by, l.created_at, l.time_to_conversion, l.verified_at, l.budget_range, l.transaction_type
+        l.value, l.status, l.verified_by, l.created_at, l.time_to_conversion, l.verified_at, l.budget_range, l.transaction_type,
+        cs.total_count, cs.verified_count
       FROM leads l
       LEFT JOIN campaign c ON l.utm_id = c.campaign_id
+      LEFT JOIN client_summary cs ON l.client_id = cs.client_id
       ${whereClause}
       ORDER BY ${sortBy} ${sortOrder}
       LIMIT ? OFFSET ?
@@ -1067,58 +1078,37 @@ async function handleAdminGetLeads(request, env) {
     
     const dataResult = await dataStmt.bind(...params, limit, offset).all();
     
-    // ===== OPTIMIZED: Get agents from agents table =====
-    const agentsStmt = await env.lead_db.prepare(`
-      SELECT agent_name FROM agents WHERE is_active = 1 ORDER BY agent_name
-    `).all();
-    
-    // ===== OPTIMIZED: Get traffic types from traffic_types table =====
-    const trafficStmt = await env.lead_db.prepare(`
-      SELECT traffic_type FROM traffic_types ORDER BY traffic_type
-    `).all();
-    
-    // ===== OPTIMIZED: Get campaigns from campaign table =====
-    const campaignStmt = await env.lead_db.prepare(`
-      SELECT campaign_id, campaign_name FROM campaign 
-      WHERE campaign_name IS NOT NULL AND campaign_name != ''
-      ORDER BY campaign_name
-    `);
-    const campaignResult = await campaignStmt.all();
-    const campaigns = campaignResult.results.map(row => ({
-      id: row.campaign_id,
-      name: row.campaign_name
-    }));
-    
-    // ===== OPTIMIZED: Get client counts from client_summary =====
-    // Get only the clients that are in the current page
-    const clientIds = dataResult.results
-      .map(row => row.client_id)
-      .filter(id => id && id !== '' && id !== '-');
-    
+    // Format the response to match what the frontend expects
     let clientCounts = {};
     let verifiedClientIds = [];
     
-    if (clientIds.length > 0) {
-      const placeholders = clientIds.map(() => '?').join(',');
-      
-      const clientCountStmt = await env.lead_db.prepare(`
-        SELECT client_id, total_count as count 
-        FROM client_summary
-        WHERE client_id IN (${placeholders})
-      `);
-      const clientCountResult = await clientCountStmt.bind(...clientIds).all();
-      
-      for (const row of clientCountResult.results) {
-        clientCounts[row.client_id] = row.count;
+    for (const row of dataResult.results) {
+      if (row.client_id && row.client_id !== '-' && row.client_id !== '') {
+        if (row.total_count !== null && row.total_count !== undefined) {
+          clientCounts[row.client_id] = row.total_count;
+        }
+        if (row.verified_count > 0) {
+          verifiedClientIds.push(row.client_id);
+        }
       }
+    }
+    
+    // ===== FETCH FILTERS ONLY WHEN REQUESTED =====
+    let filtersData = { agents: [], trafficTypes: [], campaigns: [] };
+    
+    if (includeFilters) {
+      const agentsStmt = await env.lead_db.prepare(`SELECT agent_name FROM agents WHERE is_active = 1 ORDER BY agent_name`).all();
+      const trafficStmt = await env.lead_db.prepare(`SELECT traffic_type FROM traffic_types ORDER BY traffic_type`).all();
+      const campaignStmt = await env.lead_db.prepare(`SELECT campaign_id, campaign_name FROM campaign WHERE campaign_name IS NOT NULL AND campaign_name != '' ORDER BY campaign_name`).all();
       
-      const verifiedStmt = await env.lead_db.prepare(`
-        SELECT client_id 
-        FROM client_summary 
-        WHERE verified_count > 0 AND client_id IN (${placeholders})
-      `);
-      const verifiedResult = await verifiedStmt.bind(...clientIds).all();
-      verifiedClientIds = verifiedResult.results.map(r => r.client_id);
+      filtersData = {
+        agents: agentsStmt.results.map(r => r.agent_name),
+        trafficTypes: trafficStmt.results.map(r => r.traffic_type),
+        campaigns: campaignStmt.results.map(row => ({
+          id: row.campaign_id,
+          name: row.campaign_name
+        }))
+      };
     }
     
     return new Response(JSON.stringify({
@@ -1132,21 +1122,14 @@ async function handleAdminGetLeads(request, env) {
         total: total,
         totalPages: Math.ceil(total / limit)
       },
-      filters: {
-        agents: agentsStmt.results.map(r => r.agent_name),
-        trafficTypes: trafficStmt.results.map(r => r.traffic_type),
-        campaigns: campaigns
-      }
+      filters: filtersData
     }), { 
       headers: { 'Content-Type': 'application/json' } 
     });
     
   } catch (error) {
     console.error('Get leads error:', error);
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error.message 
-    }), { 
+    return new Response(JSON.stringify({ success: false, error: error.message }), { 
       status: 500, 
       headers: { 'Content-Type': 'application/json' } 
     });
@@ -1298,8 +1281,8 @@ async function handleAdminExport(request, env) {
       
       if (status) { whereConditions.push('l.status = ?'); params.push(status); }
       if (agent) { whereConditions.push('l.agent_name = ?'); params.push(agent); }
-      if (dateFrom) { whereConditions.push("date(l.created_at, '+8 hours') >= date(?)"); params.push(dateFrom); }
-      if (dateTo) { whereConditions.push("date(l.created_at, '+8 hours') <= date(?)"); params.push(dateTo); }
+      if (dateFrom) { whereConditions.push("l.created_at >= datetime(?, '-8 hours')"); params.push(dateFrom + " 00:00:00"); }
+      if (dateTo) { whereConditions.push("l.created_at <= datetime(?, '-8 hours')"); params.push(dateTo + " 23:59:59"); }
     }
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
@@ -2192,7 +2175,7 @@ function exportAllLeads() {
 }
 
 function loadFilters() {
-  fetch('/api/leads?limit=1')
+  fetch('/api/leads?limit=1&include_filters=true')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success && data.filters) {
