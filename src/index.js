@@ -137,14 +137,14 @@ async function handleCampaignPerformance(request, env) {
         SELECT 
           c.campaign_id,
           c.campaign_name,
-          date(l.created_at) as date,
+          date(l.created_at, '+8 hours') as date,
           COUNT(l.id) as conversion_count
         FROM campaign c
         INNER JOIN leads l ON c.campaign_id = l.utm_id
           AND l.value > 1
-          AND date(l.created_at) >= date(?)
-          AND date(l.created_at) <= date(?)
-        GROUP BY c.campaign_id, date(l.created_at)
+          AND date(l.created_at, '+8 hours') >= date(?)
+          AND date(l.created_at, '+8 hours') <= date(?)
+        GROUP BY c.campaign_id, date(l.created_at, '+8 hours')
       ),
       aggregated AS (
         SELECT 
@@ -587,7 +587,7 @@ async function handleCombinedConversionStats(env, request) {
         SUM(organic_noshow) as organic_noshow,
         SUM(organic_pending) as organic_pending
       FROM conversion_stats
-      WHERE stat_date >= date(?) AND stat_date <= date(?)
+      WHERE date(stat_date, '+8 hours') >= date(?) AND date(stat_date, '+8 hours') <= date(?)
     `;
     
     const stmt = await env.lead_db.prepare(sql);
@@ -1031,11 +1031,11 @@ async function handleAdminGetLeads(request, env) {
       params.push(campaignId);
     }
     if (dateFrom) {
-      whereConditions.push('date(l.created_at) >= date(?)');
+      whereConditions.push("date(l.created_at, '+8 hours') >= date(?)");
       params.push(dateFrom);
     }
     if (dateTo) {
-      whereConditions.push('date(l.created_at) <= date(?)');
+      whereConditions.push("date(l.created_at, '+8 hours') <= date(?)");
       params.push(dateTo);
     }
     if (search) {
@@ -1298,8 +1298,8 @@ async function handleAdminExport(request, env) {
       
       if (status) { whereConditions.push('l.status = ?'); params.push(status); }
       if (agent) { whereConditions.push('l.agent_name = ?'); params.push(agent); }
-      if (dateFrom) { whereConditions.push('date(l.created_at) >= date(?)'); params.push(dateFrom); }
-      if (dateTo) { whereConditions.push('date(l.created_at) <= date(?)'); params.push(dateTo); }
+      if (dateFrom) { whereConditions.push("date(l.created_at, '+8 hours') >= date(?)"); params.push(dateFrom); }
+      if (dateTo) { whereConditions.push("date(l.created_at, '+8 hours') <= date(?)"); params.push(dateTo); }
     }
     
     const whereClause = whereConditions.length > 0 ? 'WHERE ' + whereConditions.join(' AND ') : '';
@@ -1569,7 +1569,7 @@ async function handleConversionTrend(env, request) {
         SUM(paid_verified) as paid_count,
         SUM(organic_verified) as organic_count
       FROM conversion_stats
-      WHERE stat_date >= date(?) AND stat_date <= date(?)
+      WHERE date(stat_date, '+8 hours') >= date(?) AND date(stat_date, '+8 hours') <= date(?)
       GROUP BY ${groupByField}
       ORDER BY ${groupByField} ASC
     `;
@@ -2358,7 +2358,9 @@ function renderTable(leads) {
     
     var verifiedBy = lead.verified_by || '-';
     if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
-    var verifiedAt = lead.verified_at ? new Date(lead.verified_at).toLocaleString() : '-';
+    
+    // Fix: force display time in Hong Kong time (UTC+8)
+    var verifiedAt = lead.verified_at ? new Date(new Date(lead.verified_at + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
 
     var isRent = true;
     if (lead.budget_range && lead.budget_range !== '' && lead.budget_range !== null) {
@@ -2447,7 +2449,10 @@ function renderTable(leads) {
     }
     html += '</select></td>';
     html += '<td><input type="text" id="value_' + lead.id + '" value="' + displayValue + '" placeholder="' + displayPlaceholder + '" readonly class="value-display"></td>';
-    html += '<td>' + new Date(lead.created_at).toLocaleString() + '</td>';
+    
+    // Fix: force display time in Hong Kong time (UTC+8)
+    html += '<td>' + new Date(new Date(lead.created_at + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') + '</td>';
+    
     html += '<td><select id="verified_by_' + lead.id + '" class="verified-by-select" data-lead-id="' + lead.id + '" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="">-</option>';
     for (var a = 0; a < agentsList.length; a++) {
@@ -2533,8 +2538,11 @@ function showClientLeads(clientId) {
           
           var verifiedBy = lead.verified_by || '-';
           if (verifiedBy === 'admin_batch') verifiedBy = '管理员批量';
-          var verifiedAt = lead.verified_at ? new Date(lead.verified_at).toLocaleString() : '-';
-          var createdAt = lead.created_at ? new Date(lead.created_at).toLocaleString() : '-';
+          
+          // Fix: force display time in Hong Kong time (UTC+8)
+          var verifiedAt = lead.verified_at ? new Date(new Date(lead.verified_at + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
+          var createdAt = lead.created_at ? new Date(new Date(lead.created_at + 'Z').getTime() + 8*3600*1000).toLocaleString('en-GB').replace(',', '') : '-';
+          
           var valueDisplay = (lead.value === null || lead.value === undefined) ? '-' : lead.value;
           
           html += '<tr>';
