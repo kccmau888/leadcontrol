@@ -1727,9 +1727,15 @@ var buyBudgetOptions = [
 ];
 
 function getDefaultDateRange() {
-  var endDate = new Date();
-  var startDate = new Date();
+  var now = new Date();
+  
+  // Add 8 hours to get Hong Kong Time (UTC+8)
+  var hkNow = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+  
+  var endDate = hkNow;
+  var startDate = new Date(hkNow.getTime());
   startDate.setDate(startDate.getDate() - 30);
+  
   return {
     dateFrom: startDate.toISOString().split('T')[0],
     dateTo: endDate.toISOString().split('T')[0]
@@ -2145,10 +2151,15 @@ function exportAllLeads() {
       return response.blob();
     })
     .then(function(blob) {
+      // Fix: Add 8 hours to filename timestamp
+      var now = new Date();
+      var hkNow = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      var timestamp = hkNow.toISOString().slice(0, 19).replace(/:/g, '-');
+      
       var url = window.URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
-      a.download = 'leads_export_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.csv';
+      a.download = 'leads_export_' + timestamp + '.csv';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -2201,7 +2212,18 @@ function loadFilters() {
     })
     .catch(function(err) {
       console.error("Load filters error:", err);
-      var defaultDates = getDefaultDateRange();
+        // Fix: Add 8 hours to current time
+      var now = new Date();
+      var hkNow = new Date(now.getTime() + (8 * 60 * 60 * 1000));
+      var endDate = hkNow;
+      var startDate = new Date(hkNow.getTime());
+      startDate.setDate(startDate.getDate() - 30);
+      
+      var defaultDates = {
+        dateFrom: startDate.toISOString().split('T')[0],
+        dateTo: endDate.toISOString().split('T')[0]
+      };    
+   
       var html = '<div class="filters">';
       html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option><option value="listing">放盤</option></select></div>';  // ← 新增：放盤筛选
       html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option></select></div>';

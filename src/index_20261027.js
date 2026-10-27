@@ -1186,13 +1186,16 @@ async function handleAdminBatchUpdate(request, env) {
           newStatus = 'rejected'; 
         } else if (value === 1) {
           newStatus = 'noshow';
+        } else if (value === 1000) {                     // ← 新增：放盤
+          newStatus = 'listing';
         } else { 
           newStatus = 'verified'; 
         }
         
         let updateStmt, params;
         
-        if (newStatus === 'verified' || newStatus === 'noshow') {
+        // ← 修改：listing 也走这个分支（需要写入 verified_at/verified_by/value）
+        if (newStatus === 'verified' || newStatus === 'noshow' || newStatus === 'listing') {
           updateStmt = await env.lead_db.prepare(`
             UPDATE leads 
             SET status = ?, 
@@ -1315,6 +1318,7 @@ async function handleAdminExport(request, env) {
     
     function getStatusLabel(status, value) {
       if (status === 'pending') return '待处理';
+      if (status === 'listing') return '放盤';          // ← 新增：放盤
       if (value === 0) return '已拒绝';
       if (value === 1) return '未有来电';
       if (value > 1) return '已验证';
@@ -1612,11 +1616,10 @@ async function handleConversionTrend(env, request) {
 }
 
 // ============================================
-// HTML Page - Same as your working version
+// HTML Page
 // ============================================
 
 async function handleAdminPage(env) {
-  // Keep your existing HTML here - it's unchanged
   const html = `<!DOCTYPE html>
 <html>
 <head>
@@ -1703,6 +1706,7 @@ var campaignData = null;
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
   { value: '1', label: '未有来电', isZero: false },
+  { value: 'listing', label: '放盤', isZero: false },   // ← 新增：放盤
   { value: 'below_20k', label: 'Below 2萬', isZero: false },
   { value: '20k_50k', label: '2萬 - 5萬', isZero: false },
   { value: '50k_80k', label: '5萬 - 8萬', isZero: false },
@@ -1714,6 +1718,7 @@ var rentBudgetOptions = [
 var buyBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
   { value: '1', label: '未有来电', isZero: false },
+  { value: 'listing', label: '放盤', isZero: false },   // ← 新增：放盤
   { value: 'below_8m', label: 'Below 800萬', isZero: false },
   { value: '8m_15m', label: '800萬 - 1500萬', isZero: false },
   { value: '15m_20m', label: '1500萬 - 2000萬', isZero: false },
@@ -1798,7 +1803,6 @@ function openCampaignPerformance() {
   modal.innerHTML = html;
   document.body.appendChild(modal);
   
-  // Add event listeners using JavaScript (safe, no escaping issues)
   var closeSpan = modal.querySelector('span');
   if (closeSpan) closeSpan.onclick = closeCampaignPerformance;
   
@@ -1997,7 +2001,6 @@ function renderCampaignSummary(data) {
     return;
   }
   
-  // Build a simple list with totals
   var html = '';
   html += '<h4 style="margin:10px 0;font-size:14px;font-weight:600;">📋 各Campaign总有效转化</h4>';
   html += '<div style="display:flex;flex-wrap:wrap;gap:8px 20px;padding:8px 0;">';
@@ -2167,7 +2170,7 @@ function loadFilters() {
       if (data.success && data.filters) {
         var defaultDates = getDefaultDateRange();
         var html = '<div class="filters">';
-        html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
+        html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option><option value="listing">放盤</option></select></div>';  // ← 新增：放盤筛选
         html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option>';
         for (var i = 0; i < data.filters.agents.length; i++) {
           html += '<option value="' + data.filters.agents[i] + '">' + data.filters.agents[i] + '</option>';
@@ -2200,7 +2203,7 @@ function loadFilters() {
       console.error("Load filters error:", err);
       var defaultDates = getDefaultDateRange();
       var html = '<div class="filters">';
-      html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option></select></div>';
+      html += '<div class="filter-group"><label>状态</label><select id="filterStatus"><option value="">全部</option><option value="pending">待处理</option><option value="verified">已验证</option><option value="rejected">已拒绝</option><option value="noshow">未有来电</option><option value="listing">放盤</option></select></div>';  // ← 新增：放盤筛选
       html += '<div class="filter-group"><label>代理</label><select id="filterAgent"><option value="">全部</option></select></div>';
       html += '<div class="filter-group"><label>流量类型</label><select id="filterTraffic"><option value="">全部</option></select></div>';
       html += '<div class="filter-group"><label>Campaign</label><select id="filterCampaign"><option value="">全部</option></select></div>';
@@ -2337,7 +2340,7 @@ function renderTable(leads) {
 
     var isRent = true;
     if (lead.budget_range && lead.budget_range !== '' && lead.budget_range !== null) {
-      isRent = !lead.budget_range.includes('m') && lead.budget_range !== '0' && lead.budget_range !== '1';
+      isRent = !lead.budget_range.includes('m') && lead.budget_range !== '0' && lead.budget_range !== '1' && lead.budget_range !== 'listing';  // ← 修改：放盤不算 buy
     }
     var budgetOptions = isRent ? rentBudgetOptions : buyBudgetOptions;
     var currentBudget = lead.budget_range || '';
@@ -2375,6 +2378,10 @@ function renderTable(leads) {
       statusText = '未有来电';
       statusBg = '#6c757d';
       statusColor = 'white';
+    } else if (currentValue === 1000) {                // ← 新增：放盤
+      statusText = '放盤';
+      statusBg = '#1976d2';
+      statusColor = 'white';
     } else {
       statusText = '已验证';
       statusBg = '#28a745';
@@ -2384,7 +2391,6 @@ function renderTable(leads) {
     var pageLocation = cutUrlBeforeQuestionMark(lead.page_location || '');   
     var landingPage = cutUrlBeforeQuestionMark(lead.landing_page || '');  
     
-    // ===== Handle missing client counts =====
     var leadCount = clientCounts[lead.client_id];
     var countDisplay = (leadCount !== undefined && leadCount !== null) ? leadCount : '-';
     var hasMultipleLeads = leadCount && leadCount > 1;
@@ -2457,7 +2463,7 @@ function renderTable(leads) {
 
 function isFrozen(clientId, currentStatus, verifiedClientIdsList) {
   if (!clientId || clientId === '-') return false;
-  if (currentStatus === 'verified' || currentStatus === 'noshow') return false;
+  if (currentStatus === 'verified' || currentStatus === 'noshow' || currentStatus === 'listing') return false;
   return verifiedClientIdsList.indexOf(clientId) !== -1;
 }
 
@@ -2495,6 +2501,9 @@ function showClientLeads(clientId) {
           } else if (lead.status === 'noshow') {
             statusText = '未有来电';
             statusClass = 'status-noshow-small';
+          } else if (lead.status === 'listing') {              // ← 新增：放盤
+            statusText = '放盤';
+            statusClass = 'status-listing-small';
           } else {
             statusText = '已拒绝';
             statusClass = 'status-rejected-small';
@@ -2539,6 +2548,7 @@ window.onclick = function(event) {
 function calculateValueFromBudget(budgetRange, isRent, rentValue, priceValue) {
   if (budgetRange === '0') return 0;
   if (budgetRange === '1') return 1;
+  if (budgetRange === 'listing') return 1000;   // ← 新增：放盤固定 1000
   
   function extractNumber(str) {
     if (!str || str === '-') return 0;
@@ -2583,6 +2593,10 @@ function updateStatusDisplay(statusInput, value) {
   } else if (value === 1) {
     statusInput.value = '未有来电';
     statusInput.style.backgroundColor = '#6c757d';
+    statusInput.style.color = 'white';
+  } else if (value === 1000) {                     // ← 新增：放盤
+    statusInput.value = '放盤';
+    statusInput.style.backgroundColor = '#1976d2';
     statusInput.style.color = 'white';
   } else {
     statusInput.value = '已验证';
@@ -2706,6 +2720,8 @@ function updateLead(id) {
     value = 0;
   } else if (budget === '1') {
     value = 1;
+  } else if (budget === 'listing') {                 // ← 新增：放盤固定 1000
+    value = 1000;
   } else if (budget && budget !== '') {
     if (valueInput && valueInput.value !== '' && valueInput.placeholder !== '-') {
       value = parseInt(valueInput.value);
@@ -2723,11 +2739,19 @@ function updateLead(id) {
     }
   }
   
-  var statusText = (value === null) ? '待处理' : ((value === 0) ? '已拒绝' : ((value === 1) ? '未有来电' : '已验证'));
+  // ← 修改：加入放盤判断
+  var statusText;
+  if (value === null) statusText = '待处理';
+  else if (value === 0) statusText = '已拒绝';
+  else if (value === 1) statusText = '未有来电';
+  else if (value === 1000) statusText = '放盤';
+  else statusText = '已验证';
+  
   var confirmMsg = '确定要将线索 #' + id + ' 标记为 ' + statusText + '吗？';
-  if (value !== null && value > 1) confirmMsg += '\\n转化价值: ' + value;
+  if (value !== null && value > 1 && value !== 1000) confirmMsg += '\\n转化价值: ' + value;
   else if (value === 0) confirmMsg += '\\n此线索将被标记为垃圾/拒绝';
   else if (value === 1) confirmMsg += '\\n此线索将被标记为未有来电';
+  else if (value === 1000) confirmMsg += '\\n此线索将被标记为放盤，转化价值 1000';
   if (verifiedBy) confirmMsg += '\\n验证人: ' + verifiedBy;
   
   if (!confirm(confirmMsg)) return;
