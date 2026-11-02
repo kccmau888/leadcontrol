@@ -2018,8 +2018,11 @@ function renderOfflineTable() {
   
   for (var i = 0; i < offlineLeads.length; i++) {
     var ld = offlineLeads[i]; 
+    // FIX: Use ld.id (the integer primary key) instead of ld.client_id
     var isChecked = selectedOfflineIds.has(ld.id); 
     var valueNum = (ld.value && ld.value !== "null") ? ld.value : 0; 
+    
+    // FIX: data-id is now ld.id
     var checkboxHtml = '<input type="checkbox" class="offline-cb" data-id="' + ld.id + '" ' + (isChecked ? "checked" : "") + ' onclick="handleOfflineCheckboxClick(this)">';
     
     h += "<tr style='background:#fff3e0'><td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.traffic_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.click_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.persistent_gclid || "-") + "</td></tr>";
@@ -2030,7 +2033,8 @@ function renderOfflineTable() {
 }
 
 function handleOfflineCheckboxClick(checkbox) { 
-  var id = checkbox.getAttribute("data-id"); 
+  // FIX: Parse as integer
+  var id = parseInt(checkbox.getAttribute("data-id")); 
   if (checkbox.checked) selectedOfflineIds.add(id); 
   else selectedOfflineIds.delete(id); 
   updateOfflineCount(); 
@@ -2059,6 +2063,7 @@ function exportToGoogleSheetsOffline(event) {
   var selectedLeadsData = [];
   for (var i = 0; i < offlineLeads.length; i++) {
     var lead = offlineLeads[i];
+    // FIX: Check against lead.id
     if (selectedOfflineIds.has(lead.id)) {
       selectedLeadsData.push({ 
         id: lead.id, 
@@ -2069,7 +2074,7 @@ function exportToGoogleSheetsOffline(event) {
     }
   }
   
-  if (selectedLeadsData.length === 0) { alert("没有找到合格的线索数据"); return; }
+  if (selectedLeadsData.length === 0) { alert("没有找到合格的线索数据, 请重新勾选"); return; }
   if (!confirm("确定要将 " + selectedLeadsData.length + " 个客户的线索导出到 Google Sheets 吗？")) return;
   
   var btn = event.target; 
