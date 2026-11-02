@@ -305,9 +305,13 @@ async function handleExportOfflineConversionToSheets(request, env) {
       return new Response(JSON.stringify({ success: false, error: "没有选择客户" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    // Your specific Sheet ID for Offline Conversions
-    const spreadsheetId = "1sHWB0Dcg9YsJAzxAexLnQMe6u5mbxPZ7klPFZed4w1c";
+    // Fetch the new KV variable
+    const spreadsheetId = await env.AGENT_PHONE_MAP.get("GOOGLE_SPREADSHEET_CONVERSION_ID");
     const serviceAccountJson = await env.AGENT_PHONE_MAP.get("GOOGLE_SERVICE_ACCOUNT_KEY");
+    
+    if (!spreadsheetId) {
+      return new Response(JSON.stringify({ success: false, error: "Google Conversion Sheet ID 未配置" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
     
     if (!serviceAccountJson) {
       return new Response(JSON.stringify({ success: false, error: "Google Sheets 未配置" }), { status: 500, headers: { "Content-Type": "application/json" } });
@@ -1976,7 +1980,7 @@ function showOfflineConversionPage() {
       "</div>" +
       "<div style='margin-bottom:20px'>" +
         "<button class='btn btn-primary' onclick='loadOfflineLeads()'>刷新列表</button>" +
-        "<button class='btn btn-success' onclick='exportToGoogleSheetsOffline()' style='background:#25D366;'>📤 导出选中到 Google Sheets</button> " +
+        "<button class='btn btn-success' onclick='exportToGoogleSheetsOffline(event)' style='background:#25D366;'>📤 导出选中到 Google Sheets</button> " +
         "<span id='offlineCountSpan' style='margin-left:20px'></span>" +
       "</div>" +
       "<div id='offlineTablePanel'>加载中...</div>" +
@@ -2049,7 +2053,7 @@ function updateOfflineCount() {
   if (span) span.innerHTML = "已选择 " + selectedOfflineIds.size + " 条"; 
 }
 
-function exportToGoogleSheetsOffline() {
+function exportToGoogleSheetsOffline(event) {
   if (selectedOfflineIds.size === 0) { alert("请先选择要导出的客户"); return; }
   
   var selectedLeadsData = [];
