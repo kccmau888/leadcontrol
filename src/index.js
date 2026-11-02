@@ -276,7 +276,7 @@ async function handleToggleAgentStatus(request, env) {
 async function handleGetOfflineConversionLeads(request, env) {
   try {
     const sql = `
-      SELECT id, client_id, value, traffic_type, click_type, persistent_gclid 
+      SELECT id, client_id, value, traffic_type, click_type, persistent_gclid, created_at
       FROM leads 
       WHERE persistent_gclid <> '' 
         AND value > 1 
@@ -305,7 +305,7 @@ async function handleExportOfflineConversionToSheets(request, env) {
       return new Response(JSON.stringify({ success: false, error: "没有选择客户" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
-    // Fetch the new KV variable
+    // Fetch KV variables
     const spreadsheetId = await env.AGENT_PHONE_MAP.get("GOOGLE_SPREADSHEET_CONVERSION_ID");
     const serviceAccountJson = await env.AGENT_PHONE_MAP.get("GOOGLE_SERVICE_ACCOUNT_KEY");
     
@@ -318,19 +318,6 @@ async function handleExportOfflineConversionToSheets(request, env) {
     }
     
     const accessToken = await getGoogleAccessToken(serviceAccountJson);
-    
-    // Format Timestamp: 2026-11-02 16:00:00 +0800
-    const now = new Date();
-    const hkOffset = 8 * 60; 
-    const localTime = new Date(now.getTime() + (hkOffset * 60 * 1000));
-    
-    const year = localTime.getUTCFullYear();
-    const month = String(localTime.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(localTime.getUTCDate()).padStart(2, '0');
-    const hours = String(localTime.getUTCHours()).padStart(2, '0');
-    const minutes = String(localTime.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(localTime.getUTCSeconds()).padStart(2, '0');
-    const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} +0800`;
     
     const rows = [];
     for (const lead of leads) {
@@ -351,6 +338,23 @@ async function handleExportOfflineConversionToSheets(request, env) {
         isGclid = true; // Fallback to GCLID
       }
       
+      // Format created_at (UTC) to Hong Kong Time (+0800)
+      let formattedTime = "";
+      if (lead.created_at) {
+        // Parse the database UTC string
+        const d = new Date(lead.created_at);
+        // Add 8 hours for HK time
+        const hkTime = new Date(d.getTime() + (8 * 60 * 60 * 1000));
+        
+        const year = hkTime.getUTCFullYear();
+        const month = String(hkTime.getUTCMonth() + 1).padStart(2, '0');
+        const day = String(hkTime.getUTCDate()).padStart(2, '0');
+        const hours = String(hkTime.getUTCHours()).padStart(2, '0');
+        const minutes = String(hkTime.getUTCMinutes()).padStart(2, '0');
+        const seconds = String(hkTime.getUTCSeconds()).padStart(2, '0');
+        formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} +0800`;
+      }
+      
       // Map to columns A-H
       rows.push([
         lead.client_id,                                     // A: Order ID
@@ -358,7 +362,7 @@ async function handleExportOfflineConversionToSheets(request, env) {
         isGbraid ? pid : '',                                // C: GBRAID
         isWbraid ? pid : '',                                // D: WBRAID
         "organic_conversion",                               // E: Conversion Name
-        formattedTime,                                      // F: Conversion Time
+        formattedTime,                                      // F: Conversion Time (created_at + 8 hours)
         lead.value,                                         // G: Conversion Value
         "HKD"                                               // H: Conversion Currency
       ]);
@@ -395,7 +399,7 @@ async function handleExportOfflineConversionToSheets(request, env) {
       }), { headers: { "Content-Type": "application/json" } });
       
     } else {
-      console.error("Google Sheets API error:", result);
+      console.error("Google Sheets API error:", JSON.stringify(result));
       return new Response(JSON.stringify({ success: false, error: result.error?.message || "导出失败" }), { 
         status: 500, 
         headers: { "Content-Type": "application/json" } 
@@ -2069,7 +2073,8 @@ function exportToGoogleSheetsOffline(event) {
         id: lead.id, 
         client_id: lead.client_id, 
         value: lead.value, 
-        persistent_gclid: lead.persistent_gclid 
+        persistent_gclid: lead.persistent_gclid,
+        created_at: lead.created_at
       });
     }
   }
