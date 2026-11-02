@@ -594,7 +594,7 @@ async function handleAdminGetLeads(request, env) {
       SELECT l.id, l.client_id, l.user_ip, l.agent_name, l.agent_phone, l.click_type,
         l.rent, l.property_price, l.size, l.district, l.property_type,
         l.landing_page, l.page_location,
-        l.utm_source, l.utm_medium, l.utm_campaign, l.gclid,
+        l.utm_source, l.utm_medium, l.utm_campaign, l.gclid, l.persistent_gclid,
         l.traffic_type, l.traffic_source, c.campaign_name,
         l.value, l.status, l.verified_by, l.created_at, l.time_to_conversion, l.verified_at, l.budget_range, l.transaction_type,
         cs.total_count, cs.verified_count
@@ -1483,16 +1483,16 @@ function renderTable(leads) {
     var clientDisplay = (hasMultipleLeads && lead.client_id && lead.client_id !== '-') 
       ? '<span class="client-link" onclick="showClientLeads(\\'' + (lead.client_id || '') + '\\')">' + (lead.client_id || '-') + ' (' + countDisplay + ')</span>'
       : (lead.client_id || '-');
-    
+    var persistentGclidBadge = (lead.persistent_gclid !== null && lead.persistent_gclid !== undefined && lead.persistent_gclid !== '') 
+        ? ' <span style="display:inline-block;border:2px solid #333;border-radius:2px;padding:0 5px;font-size:11px;font-weight:bold;line-height:15px;vertical-align:middle;margin-left:4px;">$</span>': '';
     var rowClass = frozen ? 'frozen-row' : '';
     html += '<tr class="' + rowClass + ' first-row">';
     html += '<td>' + lead.id + '</td><td class="wrap-text">' + clientDisplay + '</td><td>' + lead.click_type + '</td><td>' + (lead.agent_name || '-') + '</td><td>' + (lead.district || '-') + '</td>';
     html += '<td>' + (formatCurrency(lead.rent) || '-') + '</td><td>' + (formatCurrency(lead.property_price) || '-') + '</td>';
     html += '<td><select id="tx_type_' + lead.id + '" class="tx-type-select" onchange="onTransactionTypeChange(' + lead.id + ')" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="rent" ' + (lead.transaction_type === 'rent' ? 'selected' : '') + '>租用</option><option value="buy" ' + (lead.transaction_type === 'buy' ? 'selected' : '') + '>购买</option></select></td>';
-    html += '<td><span>' + (lead.traffic_type || 'direct') + '</span></td><td>' + (lead.campaign_name || '-') + '</td>'; 
+    html += '<td><span>' + (lead.traffic_type || 'direct') + '</span>' + persistentGclidBadge + '</td><td>' + (lead.campaign_name || '-') + '</td>';  
     html += '<td><input type="text" id="status_' + lead.id + '" value="' + statusText + '" disabled class="status-input" style="background-color:' + statusBg + ';color:' + statusColor + ';"></td>';
-
     html += '<td><select id="budget_' + lead.id + '" class="budget-select" data-original-budget="' + (currentBudget && currentBudget !== '' ? escapeHtml(currentBudget) : '') + '" onchange="updateValueFromBudget(' + lead.id + ')" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="">请选择</option>';
     for (var j = 0; j < budgetOptions.length; j++) {
