@@ -90,6 +90,14 @@ export default {
     if (path === '/api/debug-all-vars' && request.method === 'GET') {
       return handleDebugAllVars(request, env);
     }
+
+    // Offline Conversion
+    if (path === '/api/offline-conversion-leads' && request.method === 'GET') {
+      return handleGetOfflineConversionLeads(request, env);
+    }
+    if (path === '/api/export-offline-conversion-to-sheets' && request.method === 'POST') {
+      return handleExportOfflineConversionToSheets(request, env);
+    }
     
     return new Response('Not found', { status: 404 });
   }
@@ -260,6 +268,147 @@ async function handleToggleAgentStatus(request, env) {
     return new Response(JSON.stringify({ success: false, error: error.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
+
+// ============================================
+// Offline Conversion Functions
+// ============================================
+
+async function handleGetOfflineConversionLeads(request, env) {
+  try {
+    const sql = `
+      SELECT id, client_id, value, traffic_type, click_type, persistent_gclid 
+      FROM leads 
+      WHERE persistent_gclid <> '' 
+        AND value > 1 
+        AND traffic_type <> 'paid' 
+        AND reinstatement_submitted = 0
+    `;
+    const stmt = await env.lead_db.prepare(sql);
+    const result = await stmt.all();
+    
+    return new Response(JSON.stringify({ success: true, leads: result.results }), { 
+      headers: { "Content-Type": "application/json" } 
+    });
+  } catch (error) {
+    console.error("Get offline conversion leads error:", error);
+    return new Response(JSON.stringify({ success: false, error: error.message }), { 
+      status: 500, 
+      headers: { "Content-Type": "application/json" } 
+    });
+  }
+}
+
+async function handleExportOfflineConversionToSheets(request, env) {
+  try {
+    const { leads } = await request.json();
+    if (!leads || !Array.isArray(leads) || leads.length === 0) {
+      return new Response(JSON.stringify({ success: false, error: "没有选择客户" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    // Your specific Sheet ID for Offline Conversions
+    const spreadsheetId = "1sHWB0Dcg9YsJAzxAexLnQMe6u5mbxPZ7klPFZed4w1c";
+    const serviceAccountJson = await env.AGENT_PHONE_MAP.get("GOOGLE_SERVICE_ACCOUNT_KEY");
+    
+    if (!serviceAccountJson) {
+      return new Response(JSON.stringify({ success: false, error: "Google Sheets 未配置" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+    
+    const accessToken = await getGoogleAccessToken(serviceAccountJson);
+    
+    // Format Timestamp: 2026-11-02 16:00:00 +0800
+    const now = new Date();
+    const hkOffset = 8 * 60; 
+    const localTime = new Date(now.getTime() + (hkOffset * 60 * 1000));
+    
+    const year = localTime.getUTCFullYear();
+    const month = String(localTime.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(localTime.getUTCDate()).padStart(2, '0');
+    const hours = String(localTime.getUTCHours()).padStart(2, '0');
+    const minutes = String(localTime.getUTCMinutes()).padStart(2, '0');
+    const seconds = String(localTime.getUTCSeconds()).padStart(2, '0');
+    const formattedTime = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} +0800`;
+    
+    const rows = [];
+    for (const lead of leads) {
+      const pid = (lead.persistent_gclid || '').trim();
+      
+      // Classification Logic
+      let isGclid = false;
+      let isGbraid = false;
+      let isWbraid = false;
+
+      if (pid.toUpperCase().includes('GCLID')) {
+        isGclid = true;
+      } else if (pid.startsWith('E') && pid.length > 50 && pid.length < 80) {
+        isWbraid = true;
+      } else if (pid.startsWith('0') && pid.length < 50) {
+        isGbraid = true;
+      } else {
+        isGclid = true; // Fallback to GCLID
+      }
+      
+      // Map to columns A-H
+      rows.push([
+        lead.client_id,                                     // A: Order ID
+        isGclid ? pid : '',                                 // B: Google Click ID
+        isGbraid ? pid : '',                                // C: GBRAID
+        isWbraid ? pid : '',                                // D: WBRAID
+        "organic_conversion",                               // E: Conversion Name
+        formattedTime,                                      // F: Conversion Time
+        lead.value,                                         // G: Conversion Value
+        "HKD"                                               // H: Conversion Currency
+      ]);
+    }
+    
+    // Append to Google Sheet (Sheet1!A:H)
+    const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Sheet1!A:H:append?valueInputOption=USER_ENTERED`, {
+      method: 'POST',
+      headers: { 
+        'Authorization': `Bearer ${accessToken}`, 
+        'Content-Type': 'application/json' 
+      },
+      body: JSON.stringify({ values: rows })
+    });
+    
+    const result = await response.json();
+    
+    if (response.ok) {
+      // Mark as submitted in DB
+      const leadIds = leads.map(l => l.id);
+      const placeholders = leadIds.map(() => "?").join(",");
+      const nowIso = new Date().toISOString();
+      
+      await env.lead_db.prepare(`
+        UPDATE leads 
+        SET reinstatement_submitted = 1, reinstatement_submitted_at = ? 
+        WHERE id IN (${placeholders})
+      `).bind(nowIso, ...leadIds).run();
+      
+      return new Response(JSON.stringify({ 
+        success: true, 
+        message: `成功导出 ${rows.length} 条记录到 Google Sheets`, 
+        rows_added: rows.length 
+      }), { headers: { "Content-Type": "application/json" } });
+      
+    } else {
+      console.error("Google Sheets API error:", result);
+      return new Response(JSON.stringify({ success: false, error: result.error?.message || "导出失败" }), { 
+        status: 500, 
+        headers: { "Content-Type": "application/json" } 
+      });
+    }
+  } catch (error) {
+    console.error("Export offline conversion error:", error);
+    return new Response(JSON.stringify({ success: false, error: error.message }), { 
+      status: 500, 
+      headers: { "Content-Type": "application/json" } 
+    });
+  }
+}
+
+// ============================================
+// Existing Reinstatement & Export Functions
+// ============================================
 
 async function handleExportReinstatementToSheets(request, env) {
   try {
@@ -594,8 +743,8 @@ async function handleAdminGetLeads(request, env) {
       SELECT l.id, l.client_id, l.user_ip, l.agent_name, l.agent_phone, l.click_type,
         l.rent, l.property_price, l.size, l.district, l.property_type,
         l.landing_page, l.page_location,
-        l.utm_source, l.utm_medium, l.utm_campaign, l.gclid, l.persistent_gclid,
-        l.traffic_type, l.traffic_source, c.campaign_name,
+        l.utm_source, l.utm_medium, l.utm_campaign, l.gclid,
+        l.traffic_type, l.traffic_source, l.persistent_gclid, c.campaign_name,
         l.value, l.status, l.verified_by, l.created_at, l.time_to_conversion, l.verified_at, l.budget_range, l.transaction_type,
         cs.total_count, cs.verified_count
       FROM leads l
@@ -782,41 +931,6 @@ async function handleAdminExport(request, env) {
 // ============================================
 // Reinstatement Section
 // ============================================
-async function getGoogleAdsAccessToken(env) {
-  const clientId = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CLIENT_ID");
-  const clientSecret = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_CLIENT_SECRET");
-  const refreshToken = await env.AGENT_PHONE_MAP.get("GOOGLE_ADS_REFRESH_TOKEN");
-  if (!clientId || !clientSecret || !refreshToken) throw new Error("Missing Google Ads credentials in KV");
-  const response = await fetch('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' })
-  });
-  const data = await response.json();
-  if (!response.ok) throw new Error(`Failed to get access token: ${data.error}`);
-  return data.access_token;
-}
-
-async function createSingleConversionAdjustment(accessToken, customerId, conversionActionId, clientId, newValue, conversionDateTime, developerToken, loginCustomerId) {
-  let formattedDateTime = conversionDateTime;
-  if (formattedDateTime && !formattedDateTime.includes('+')) {
-    const date = new Date(formattedDateTime);
-    formattedDateTime = date.toISOString().slice(0, 19).replace('T', ' ') + '+00:00';
-  }
-  const requestBody = {
-    conversion_adjustments: [{ conversion_action: `customers/${customerId}/conversionActions/${conversionActionId}`, adjustment_type: "RESTATEMENT", order_id: clientId, conversion_date_time: formattedDateTime, restatement_value: { adjusted_value: newValue } }],
-    partial_failure: true
-  };
-  const response = await fetch(`https://googleads.googleapis.com/v17/customers/${customerId}/conversionAdjustments:upload`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json', 'developer-token': developerToken, 'login-customer-id': loginCustomerId },
-    body: JSON.stringify(requestBody)
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.error?.message || "API请求失败");
-  return result;
-}
-
 async function handleGetReinstatementLeads(request, env) {
   try {
     const url = new URL(request.url);
@@ -999,6 +1113,10 @@ var currentGroupBy = 'day';
 var campaignChart = null;
 var campaignGroupBy = 'day';
 var campaignData = null;
+
+// Offline Conversion Variables
+var offlineLeads = [];
+var selectedOfflineIds = new Set();
 
 var rentBudgetOptions = [
   { value: '0', label: '0 (拒绝/垃圾)', isZero: true },
@@ -1483,16 +1601,20 @@ function renderTable(leads) {
     var clientDisplay = (hasMultipleLeads && lead.client_id && lead.client_id !== '-') 
       ? '<span class="client-link" onclick="showClientLeads(\\'' + (lead.client_id || '') + '\\')">' + (lead.client_id || '-') + ' (' + countDisplay + ')</span>'
       : (lead.client_id || '-');
+    
     var persistentGclidBadge = (lead.persistent_gclid !== null && lead.persistent_gclid !== undefined && lead.persistent_gclid !== '') 
-        ? ' <span style="display:inline-block;border:2px solid #333;border-radius:2px;padding:0 5px;font-size:11px;font-weight:bold;line-height:15px;vertical-align:middle;margin-left:4px;">$</span>': '';
+      ? ' <span style="display:inline-block;border:2px solid #333;border-radius:2px;padding:0 5px;font-size:11px;font-weight:bold;line-height:15px;vertical-align:middle;margin-left:4px;">$</span>' 
+      : '';
+
     var rowClass = frozen ? 'frozen-row' : '';
     html += '<tr class="' + rowClass + ' first-row">';
     html += '<td>' + lead.id + '</td><td class="wrap-text">' + clientDisplay + '</td><td>' + lead.click_type + '</td><td>' + (lead.agent_name || '-') + '</td><td>' + (lead.district || '-') + '</td>';
     html += '<td>' + (formatCurrency(lead.rent) || '-') + '</td><td>' + (formatCurrency(lead.property_price) || '-') + '</td>';
     html += '<td><select id="tx_type_' + lead.id + '" class="tx-type-select" onchange="onTransactionTypeChange(' + lead.id + ')" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="rent" ' + (lead.transaction_type === 'rent' ? 'selected' : '') + '>租用</option><option value="buy" ' + (lead.transaction_type === 'buy' ? 'selected' : '') + '>购买</option></select></td>';
-    html += '<td><span>' + (lead.traffic_type || 'direct') + '</span>' + persistentGclidBadge + '</td><td>' + (lead.campaign_name || '-') + '</td>';  
+    html += '<td><span>' + (lead.traffic_type || 'direct') + '</span>' + persistentGclidBadge + '</td><td>' + (lead.campaign_name || '-') + '</td>'; 
     html += '<td><input type="text" id="status_' + lead.id + '" value="' + statusText + '" disabled class="status-input" style="background-color:' + statusBg + ';color:' + statusColor + ';"></td>';
+
     html += '<td><select id="budget_' + lead.id + '" class="budget-select" data-original-budget="' + (currentBudget && currentBudget !== '' ? escapeHtml(currentBudget) : '') + '" onchange="updateValueFromBudget(' + lead.id + ')" ' + (frozen ? 'disabled' : '') + '>';
     html += '<option value="">请选择</option>';
     for (var j = 0; j < budgetOptions.length; j++) {
@@ -1842,6 +1964,138 @@ function toggleSelectAllRein() {
 }
 function updateReinCount() { var span = document.getElementById("reinCountSpan"); if (span) span.innerHTML = "已选择 " + selectedReinIds.size + " 条"; }
 
+// ============================================
+// Offline Conversion UI Functions
+// ============================================
+function showOfflineConversionPage() {
+  document.getElementById("app").innerHTML = `
+    <div class='admin-box'>
+      <div style='display:flex;justify-content:space-between;margin-bottom:20px'>
+        <h2>Offline Conversion - 合格线索</h2>
+        <button class='btn btn-danger' onclick='hideOfflineConversionPage()'>返回主页面</button>
+      </div>
+      <div style='margin-bottom:20px'>
+        <button class='btn btn-primary' onclick='loadOfflineLeads()'>刷新列表</button>
+        <button class='btn btn-success' onclick='exportToGoogleSheetsOffline()' style='background:#25D366;'>📤 导出选中到 Google Sheets</button> 
+        <span id='offlineCountSpan' style='margin-left:20px'></span>
+      </div>
+      <div id='offlineTablePanel'>加载中...</div>
+    </div>`;
+  loadOfflineLeads();
+}
+
+function hideOfflineConversionPage() { 
+  selectedOfflineIds.clear(); 
+  offlineLeads = []; 
+  render(); 
+}
+
+function loadOfflineLeads() {
+  selectedOfflineIds.clear();
+  fetch("/api/offline-conversion-leads").then(function(r) { return r.json(); }).then(function(data) {
+    if (data.success) { 
+      offlineLeads = data.leads || []; 
+      renderOfflineTable(); 
+    } else { 
+      document.getElementById("offlineTablePanel").innerHTML = "<div style='color:red'>加载失败: " + (data.error || "未知错误") + "</div>"; 
+    }
+  }).catch(function(err) { 
+    console.error("Fetch error:", err); 
+    document.getElementById("offlineTablePanel").innerHTML = "<div style='color:red'>网络错误: " + err.message + "</div>"; 
+  });
+}
+
+function renderOfflineTable() {
+  var c = document.getElementById("offlineTablePanel"); if (!c) return;
+  if (!offlineLeads || offlineLeads.length === 0) { c.innerHTML = "<div style='text-align:center;padding:40px'>暂无合格线索</div>"; return; }
+  
+  var h = "<div class='table-wrapper'><table style='width:100%;border-collapse:collapse;background:white'><thead><tr style='background:#f8f9fa'>";
+  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'><input type='checkbox' id='selectAllOffline' onchange='toggleSelectAllOffline()'></th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>客户号</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>流量类型</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>转化价值</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>点击类型</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>Persistent Click ID</th></tr></thead><tbody>";
+  
+  for (var i = 0; i < offlineLeads.length; i++) {
+    var ld = offlineLeads[i]; 
+    var isChecked = selectedOfflineIds.has(ld.id); 
+    var valueNum = (ld.value && ld.value !== "null") ? ld.value : 0; 
+    var checkboxHtml = '<input type="checkbox" class="offline-cb" data-id="' + ld.id + '" ' + (isChecked ? "checked" : "") + ' onclick="handleOfflineCheckboxClick(this)">';
+    
+    h += "<tr style='background:#fff3e0'><td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.traffic_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.click_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.persistent_gclid || "-") + "</td></tr>";
+  }
+  h += "</tbody></table></div>"; 
+  c.innerHTML = h; 
+  updateOfflineCount();
+}
+
+function handleOfflineCheckboxClick(checkbox) { 
+  var id = checkbox.getAttribute("data-id"); 
+  if (checkbox.checked) selectedOfflineIds.add(id); 
+  else selectedOfflineIds.delete(id); 
+  updateOfflineCount(); 
+}
+
+function toggleSelectAllOffline() {
+  var sa = document.getElementById("selectAllOffline"); 
+  var cbs = document.querySelectorAll(".offline-cb:not([disabled])");
+  for (var i = 0; i < cbs.length; i++) { 
+    cbs[i].checked = sa.checked; 
+    var id = cbs[i].getAttribute("data-id"); 
+    if (sa.checked) selectedOfflineIds.add(id); 
+    else selectedOfflineIds.delete(id); 
+  }
+  updateOfflineCount();
+}
+
+function updateOfflineCount() { 
+  var span = document.getElementById("offlineCountSpan"); 
+  if (span) span.innerHTML = "已选择 " + selectedOfflineIds.size + " 条"; 
+}
+
+function exportToGoogleSheetsOffline() {
+  if (selectedOfflineIds.size === 0) { alert("请先选择要导出的客户"); return; }
+  
+  var selectedLeadsData = [];
+  for (var i = 0; i < offlineLeads.length; i++) {
+    var lead = offlineLeads[i];
+    if (selectedOfflineIds.has(lead.id)) {
+      selectedLeadsData.push({ 
+        id: lead.id, 
+        client_id: lead.client_id, 
+        value: lead.value, 
+        persistent_gclid: lead.persistent_gclid 
+      });
+    }
+  }
+  
+  if (selectedLeadsData.length === 0) { alert("没有找到合格的线索数据"); return; }
+  if (!confirm("确定要将 " + selectedLeadsData.length + " 个客户的线索导出到 Google Sheets 吗？")) return;
+  
+  var btn = event.target; 
+  var originalText = btn.innerText; 
+  btn.innerText = '导出中...'; 
+  btn.disabled = true;
+  
+  fetch("/api/export-offline-conversion-to-sheets", { 
+    method: "POST", 
+    headers: { "Content-Type": "application/json" }, 
+    body: JSON.stringify({ leads: selectedLeadsData }) 
+  }).then(function(r) { return r.json(); }).then(function(data) {
+    btn.innerText = originalText; 
+    btn.disabled = false;
+    if (data.success) { 
+      alert(data.message); 
+      selectedOfflineIds.clear(); 
+      loadOfflineLeads(); 
+      updateOfflineCount(); 
+    } else { 
+      alert("导出失败: " + data.error); 
+    }
+  }).catch(function(err) { 
+    btn.innerText = originalText; 
+    btn.disabled = false; 
+    alert("网络错误: " + err.message); 
+  });
+}
+
+
 function login() {
   var phone = document.getElementById('phone').value; var password = document.getElementById('password').value; var errorDiv = document.getElementById('loginError');
   fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: phone, password: password }) })
@@ -1878,7 +2132,9 @@ function render() {
   var app = document.getElementById('app');
   if (token) {
     app.innerHTML = '<div class="admin-box"><div class="button-bar"><div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">' +
-      '<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button><button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>' +
+      '<button class="btn btn-primary" onclick="showReinstatementPage()">Google Ads Reinstatement</button>' +
+      '<button class="btn btn-primary" onclick="showOfflineConversionPage()" style="background:#e67e22; color:white;">Offline Conversion</button>' +
+      '<button class="btn btn-success" onclick="exportAllLeads()" style="background:#28a745; color:white;">📥 导出全部 CSV</button>' +
       '<button class="btn btn-primary" onclick="openCampaignPerformance()" style="background:#6c5ce7; color:white;">📊 Campaign Performance</button><button class="btn btn-danger" onclick="logout()">退出登录</button></div></div>' +
       '<div class="stats-and-hotline-row"><div class="chart-container"><div class="chart-header"><h4>📈 有效转化趋势 (付费 vs 自然)</h4><div class="chart-group-selector">' +
       '<button class="btn-group-btn active" data-group="day">按日</button><button class="btn-group-btn" data-group="week">按周</button><button class="btn-group-btn" data-group="month">按月</button></div></div>' +
