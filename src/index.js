@@ -1968,19 +1968,19 @@ function updateReinCount() { var span = document.getElementById("reinCountSpan")
 // Offline Conversion UI Functions
 // ============================================
 function showOfflineConversionPage() {
-  document.getElementById("app").innerHTML = `
-    <div class='admin-box'>
-      <div style='display:flex;justify-content:space-between;margin-bottom:20px'>
-        <h2>Offline Conversion - 合格线索</h2>
-        <button class='btn btn-danger' onclick='hideOfflineConversionPage()'>返回主页面</button>
-      </div>
-      <div style='margin-bottom:20px'>
-        <button class='btn btn-primary' onclick='loadOfflineLeads()'>刷新列表</button>
-        <button class='btn btn-success' onclick='exportToGoogleSheetsOffline()' style='background:#25D366;'>📤 导出选中到 Google Sheets</button> 
-        <span id='offlineCountSpan' style='margin-left:20px'></span>
-      </div>
-      <div id='offlineTablePanel'>加载中...</div>
-    </div>`;
+  document.getElementById("app").innerHTML = 
+    "<div class='admin-box'>" +
+      "<div style='display:flex;justify-content:space-between;margin-bottom:20px'>" +
+        "<h2>Offline Conversion - 合格线索</h2>" +
+        "<button class='btn btn-danger' onclick='hideOfflineConversionPage()'>返回主页面</button>" +
+      "</div>" +
+      "<div style='margin-bottom:20px'>" +
+        "<button class='btn btn-primary' onclick='loadOfflineLeads()'>刷新列表</button>" +
+        "<button class='btn btn-success' onclick='exportToGoogleSheetsOffline()' style='background:#25D366;'>📤 导出选中到 Google Sheets</button> " +
+        "<span id='offlineCountSpan' style='margin-left:20px'></span>" +
+      "</div>" +
+      "<div id='offlineTablePanel'>加载中...</div>" +
+    "</div>";
   loadOfflineLeads();
 }
 
