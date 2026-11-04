@@ -1676,8 +1676,7 @@ function showClientLeads(clientId) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success) {
-        var html = '<div style="overflow-x:auto;"><table style="width:700px; border-collapse:collapse; font-size:12px; text-align:left;">';
-        
+    var html = '<div style="overflow-x:auto;"><table style="width:700px; min-width:auto; border-collapse:collapse; font-size:12px; text-align:left;">';      
         html += '<thead><tr style="border-bottom:2px solid #eee; color:#666;">';
         // HERE: Set specific widths on the th elements you want to control
         html += '<th style="padding:8px 4px;">ID</th>';
