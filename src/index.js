@@ -681,7 +681,7 @@ async function handleGetClientLeads(request, env) {
     if (!clientId) return new Response(JSON.stringify({ success: false, error: '缺少 client_id' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
     
     // Added traffic_type to the SELECT statement
-    const stmt = await env.lead_db.prepare(`SELECT id, client_id, status, verified_by, verified_at, created_at, value, traffic_type FROM leads WHERE client_id = ? ORDER BY created_at ASC`);
+    const stmt = await env.lead_db.prepare(`SELECT id, client_id, status, verified_by, verified_at, created_at, value, traffic_type FROM leads WHERE client_id = ? ORDER BY ID DESC`);
     const result = await stmt.bind(clientId).all();
     return new Response(JSON.stringify({ success: true, client_id: clientId, leads: result.results }), { headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
@@ -1665,7 +1665,7 @@ function showClientLeads(clientId) {
   if (!clientId || clientId === '-') return;
   var modal = document.getElementById('clientModal');
   if (!modal) {
-    var modalHtml = '<div id="clientModal" class="modal"><div class="modal-content" style="max-width: 600px; padding: 15px;"><div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;"><h3 style="margin:0; font-size:16px;">客户线索详情 - <span id="modalClientId"></span></h3><span class="modal-close" onclick="closeModal()" style="font-size:24px;">&times;</span></div><div id="modalBody"><div style="text-align:center;padding:40px">加载中...</div></div></div></div>';
+    var modalHtml = '<div id="clientModal" class="modal"><div class="modal-content" style="max-width: 800px; padding: 20px;"><div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid #eee; padding-bottom:10px;"><h3 style="margin:0; font-size:16px;">客户线索详情 - <span id="modalClientId"></span></h3><span class="modal-close" onclick="closeModal()" style="font-size:24px; cursor:pointer;">&times;</span></div><div id="modalBody"><div style="text-align:center;padding:40px">加载中...</div></div></div></div>';
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     modal = document.getElementById('clientModal');
   }
@@ -1676,7 +1676,19 @@ function showClientLeads(clientId) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success) {
-        var html = '<div style="overflow-x:auto;"><table class="client-leads-table"><thead><tr><th>ID</th><th>流量类型</th><th>状态</th><th>验证人</th><th>验证日期</th><th>创建日期</th><th>转化价值</th></tr></thead><tbody>';
+        var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px; text-align:left;">';
+        
+        html += '<thead><tr style="border-bottom:2px solid #eee; color:#666;">';
+        // HERE: Set specific widths on the th elements you want to control
+        html += '<th style="padding:8px 4px; width: 50px;">ID</th>';
+        html += '<th style="padding:8px 4px; width: 80px;">流量类型</th>';
+        html += '<th style="padding:8px 4px; width: 70px;">状态</th>';
+        html += '<th style="padding:8px 4px; width: 80px;">验证人</th>';
+        html += '<th style="padding:8px 4px;">验证日期</th>';
+        html += '<th style="padding:8px 4px;">创建日期</th>';
+        html += '<th style="padding:8px 4px;">转化价值</th>';
+        html += '</tr></thead><tbody>';
+
         for (var i = 0; i < data.leads.length; i++) {
           var lead = data.leads[i];
           var statusText = ''; var statusClass = '';
@@ -1692,7 +1704,15 @@ function showClientLeads(clientId) {
           var createdAt = formatHKTime(lead.created_at);
           var valueDisplay = (lead.value === null || lead.value === undefined) ? '-' : lead.value;
           
-          html += '<tr><td>' + lead.id + '</td><td>' + (lead.traffic_type || '-') + '</td><td><span class="' + statusClass + '">' + statusText + '</span></td><td>' + verifiedBy + '</td><td>' + verifiedAt + '</td><td>' + createdAt + '</td><td>' + valueDisplay + '</td></tr>';
+          html += '<tr style="border-bottom:1px solid #f0f0f0;">';
+          html += '<td style="padding:8px 4px;">' + lead.id + '</td>';
+          html += '<td style="padding:8px 4px;">' + (lead.traffic_type || '-') + '</td>';
+          html += '<td style="padding:8px 4px;"><span class="' + statusClass + '">' + statusText + '</span></td>';
+          html += '<td style="padding:8px 4px;">' + verifiedBy + '</td>';
+          html += '<td style="padding:8px 4px;">' + verifiedAt + '</td>';
+          html += '<td style="padding:8px 4px;">' + createdAt + '</td>';
+          html += '<td style="padding:8px 4px;">' + valueDisplay + '</td>';
+          html += '</tr>';
         }
         html += '</tbody></table></div>';
         document.getElementById('modalBody').innerHTML = html;
