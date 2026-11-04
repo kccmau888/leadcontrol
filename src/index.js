@@ -1676,17 +1676,17 @@ function showClientLeads(clientId) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success) {
-        var html = '<div style="overflow-x:auto;"><table style="width:100%; border-collapse:collapse; font-size:12px; text-align:left;">';
+        var html = '<div style="overflow-x:auto;"><table style="width:700%; border-collapse:collapse; font-size:12px; text-align:left;">';
         
         html += '<thead><tr style="border-bottom:2px solid #eee; color:#666;">';
         // HERE: Set specific widths on the th elements you want to control
-        html += '<th style="padding:8px 4px; width: 50px;">ID</th>';
-        html += '<th style="padding:8px 4px; width: 60px;">Source</th>';
-        html += '<th style="padding:8px 4px; width: 70px;">Status</th>';
-        html += '<th style="padding:8px 4px; width: 100px;">验证人</th>';
-        html += '<th style="padding:8px 4px; width: 150px;">验证日期</th>';
-        html += '<th style="padding:8px 4px; width: 150px;">创建日期</th>';
-        html += '<th style="padding:8px 4px; width: 80px;">转化价值</th>';
+        html += '<th style="padding:8px 4px;">ID</th>';
+        html += '<th style="padding:8px 4px;">Source</th>';
+        html += '<th style="padding:8px 4px;">Status</th>';
+        html += '<th style="padding:8px 4px;">验证人</th>';
+        html += '<th style="padding:8px 4px;">验证日期</th>';
+        html += '<th style="padding:8px 4px;">创建日期</th>';
+        html += '<th style="padding:8px 4px;">转化价值</th>';
         html += '</tr></thead><tbody>';
 
         for (var i = 0; i < data.leads.length; i++) {
