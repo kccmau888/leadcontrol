@@ -679,7 +679,9 @@ async function handleGetClientLeads(request, env) {
     const url = new URL(request.url);
     const clientId = url.searchParams.get('client_id');
     if (!clientId) return new Response(JSON.stringify({ success: false, error: '缺少 client_id' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
-    const stmt = await env.lead_db.prepare(`SELECT id, client_id, status, verified_by, verified_at, created_at, value FROM leads WHERE client_id = ? ORDER BY created_at ASC`);
+    
+    // Added traffic_type to the SELECT statement
+    const stmt = await env.lead_db.prepare(`SELECT id, client_id, status, verified_by, verified_at, created_at, value, traffic_type FROM leads WHERE client_id = ? ORDER BY created_at ASC`);
     const result = await stmt.bind(clientId).all();
     return new Response(JSON.stringify({ success: true, client_id: clientId, leads: result.results }), { headers: { 'Content-Type': 'application/json' } });
   } catch (error) {
@@ -1100,6 +1102,9 @@ async function handleAdminPage(env) {
     .btn-group-btn.active { background: #667eea; color: white; border-color: #667eea; }
     .btn-campaign { background: #6c5ce7; color: white; }
     .btn-campaign:hover { background: #5a4bd1; }
+    .client-leads-table { width: 100%; border-collapse: collapse; }
+    .client-leads-table th, .client-leads-table td { padding: 6px 4px; font-size: 12px; white-space: nowrap; border-bottom: 1px solid #eee; }
+    .client-leads-table th { text-align: left; font-weight: 600; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -1660,7 +1665,7 @@ function showClientLeads(clientId) {
   if (!clientId || clientId === '-') return;
   var modal = document.getElementById('clientModal');
   if (!modal) {
-    var modalHtml = '<div id="clientModal" class="modal"><div class="modal-content"><div class="modal-header"><h3>客户线索详情 - <span id="modalClientId"></span></h3><span class="modal-close" onclick="closeModal()">&times;</span></div><div id="modalBody"><div style="text-align:center;padding:40px">加载中...</div></div></div></div>';
+    var modalHtml = '<div id="clientModal" class="modal"><div class="modal-content" style="max-width: 600px; padding: 15px;"><div class="modal-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;"><h3 style="margin:0; font-size:16px;">客户线索详情 - <span id="modalClientId"></span></h3><span class="modal-close" onclick="closeModal()" style="font-size:24px;">&times;</span></div><div id="modalBody"><div style="text-align:center;padding:40px">加载中...</div></div></div></div>';
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     modal = document.getElementById('clientModal');
   }
@@ -1671,7 +1676,7 @@ function showClientLeads(clientId) {
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.success) {
-        var html = '<table class="client-leads-table"><thead><tr><th>ID</th><th>状态</th><th>验证人</th><th>验证日期</th><th>创建日期</th><th>转化价值</th></tr></thead><tbody>';
+        var html = '<div style="overflow-x:auto;"><table class="client-leads-table"><thead><tr><th>ID</th><th>流量类型</th><th>状态</th><th>验证人</th><th>验证日期</th><th>创建日期</th><th>转化价值</th></tr></thead><tbody>';
         for (var i = 0; i < data.leads.length; i++) {
           var lead = data.leads[i];
           var statusText = ''; var statusClass = '';
@@ -1687,9 +1692,9 @@ function showClientLeads(clientId) {
           var createdAt = formatHKTime(lead.created_at);
           var valueDisplay = (lead.value === null || lead.value === undefined) ? '-' : lead.value;
           
-          html += '<tr><td>' + lead.id + '</td><td><span class="' + statusClass + '">' + statusText + '</span></td><td>' + verifiedBy + '</td><td>' + verifiedAt + '</td><td>' + createdAt + '</td><td>' + valueDisplay + '</td></tr>';
+          html += '<tr><td>' + lead.id + '</td><td>' + (lead.traffic_type || '-') + '</td><td><span class="' + statusClass + '">' + statusText + '</span></td><td>' + verifiedBy + '</td><td>' + verifiedAt + '</td><td>' + createdAt + '</td><td>' + valueDisplay + '</td></tr>';
         }
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         document.getElementById('modalBody').innerHTML = html;
       } else {
         document.getElementById('modalBody').innerHTML = '<div style="color:red">加载失败: ' + data.error + '</div>';
