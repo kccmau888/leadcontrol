@@ -1681,12 +1681,12 @@ function showClientLeads(clientId) {
         html += '<thead><tr style="border-bottom:2px solid #eee; color:#666;">';
         // HERE: Set specific widths on the th elements you want to control
         html += '<th style="padding:8px 4px; width: 50px;">ID</th>';
-        html += '<th style="padding:8px 4px; width: 80px;">流量类型</th>';
-        html += '<th style="padding:8px 4px; width: 70px;">状态</th>';
-        html += '<th style="padding:8px 4px; width: 80px;">验证人</th>';
-        html += '<th style="padding:8px 4px;">验证日期</th>';
-        html += '<th style="padding:8px 4px;">创建日期</th>';
-        html += '<th style="padding:8px 4px;">转化价值</th>';
+        html += '<th style="padding:8px 4px; width: 60px;">Source</th>';
+        html += '<th style="padding:8px 4px; width: 70px;">Status</th>';
+        html += '<th style="padding:8px 4px; width: 100px;">验证人</th>';
+        html += '<th style="padding:8px 4px; width: 150px;">验证日期</th>';
+        html += '<th style="padding:8px 4px; width: 150px;">创建日期</th>';
+        html += '<th style="padding:8px 4px; width: 80px;">转化价值</th>';
         html += '</tr></thead><tbody>';
 
         for (var i = 0; i < data.leads.length; i++) {
