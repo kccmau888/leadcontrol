@@ -279,7 +279,7 @@ async function handleGetOfflineConversionLeads(request, env) {
       SELECT id, client_id, value, traffic_type, click_type, persistent_gclid, created_at
       FROM leads 
       WHERE persistent_gclid <> '' 
-        AND utm_id <> 1
+        AND (utm_source IS NULL OR utm_source NOT IN ('ig', 'fb', 'facebook', 'instagram'))
         AND value > 1 
         AND traffic_type <> 'paid' 
         AND reinstatement_submitted = 0
