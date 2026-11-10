@@ -474,7 +474,7 @@ async function handleExportReinstatementToSheets(request, env) {
       const placeholders = successfulIds.map(() => "?").join(",");
       const nowIso = new Date().toISOString();
       
-      await env.lead_db.prepare(`UPDATE leads SET reinstatement_submitted_at = ? WHERE client_id IN (${placeholders})`).bind(nowIso, ...successfulIds).run();
+      await env.lead_db.prepare(`UPDATE leads SET reinstatement_submitted =1, reinstatement_submitted_at = ? WHERE client_id IN (${placeholders})`).bind(nowIso, ...successfulIds).run();
       
       return new Response(JSON.stringify({ success: true, message: `成功导出 ${rows.length} 条记录到 Google Sheets`, rows_added: rows.length }), { headers: { "Content-Type": "application/json" } });
     } else {
