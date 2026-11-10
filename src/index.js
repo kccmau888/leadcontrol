@@ -2053,7 +2053,7 @@ function renderOfflineTable() {
     // FIX: data-id is now ld.id
     var checkboxHtml = '<input type="checkbox" class="offline-cb" data-id="' + ld.id + '" ' + (isChecked ? "checked" : "") + ' onclick="handleOfflineCheckboxClick(this)">';
     
-    h += "<tr style='background:#fff3e0'><td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.created_at || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.traffic_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.click_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.persistent_gclid || "-") + "</td></tr>";
+    h += "<tr style='background:#fff3e0'><td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + formatHKTime(ld.created_at) + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.traffic_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.click_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.persistent_gclid || "-") + "</td></tr>";
   }
   h += "</tbody></table></div>"; 
   c.innerHTML = h; 
