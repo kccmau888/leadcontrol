@@ -280,10 +280,9 @@ async function handleGetOfflineConversionLeads(request, env) {
       FROM leads 
       WHERE persistent_gclid <> '' 
         AND (utm_source IS NULL OR utm_source NOT IN ('ig', 'fb', 'facebook', 'instagram'))
-        AND value > 1 
-        AND traffic_type <> 'paid' 
+        AND value > 1  
         AND reinstatement_submitted = 0
-    `;
+      `;
     const stmt = await env.lead_db.prepare(sql);
     const result = await stmt.all();
     
