@@ -2042,7 +2042,7 @@ function renderOfflineTable() {
   if (!offlineLeads || offlineLeads.length === 0) { c.innerHTML = "<div style='text-align:center;padding:40px'>暂无合格线索</div>"; return; }
   
   var h = "<div class='table-wrapper'><table style='width:100%;border-collapse:collapse;background:white'><thead><tr style='background:#f8f9fa'>";
-  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'><input type='checkbox' id='selectAllOffline' onchange='toggleSelectAllOffline()'></th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>客户号</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>流量类型</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>转化价值</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>点击类型</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>Persistent Click ID</th></tr></thead><tbody>";
+  h += "<th style='padding:12px;text-align:left;border-bottom:1px solid #eee'><input type='checkbox' id='selectAllOffline' onchange='toggleSelectAllOffline()'></th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>询问时间</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>客户号</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>流量类型</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>转化价值</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>点击类型</th><th style='padding:12px;text-align:left;border-bottom:1px solid #eee'>Persistent Click ID</th></tr></thead><tbody>";
   
   for (var i = 0; i < offlineLeads.length; i++) {
     var ld = offlineLeads[i]; 
@@ -2053,7 +2053,7 @@ function renderOfflineTable() {
     // FIX: data-id is now ld.id
     var checkboxHtml = '<input type="checkbox" class="offline-cb" data-id="' + ld.id + '" ' + (isChecked ? "checked" : "") + ' onclick="handleOfflineCheckboxClick(this)">';
     
-    h += "<tr style='background:#fff3e0'><td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.traffic_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.click_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.persistent_gclid || "-") + "</td></tr>";
+    h += "<tr style='background:#fff3e0'><td style='padding:12px;border-bottom:1px solid #eee'>" + checkboxHtml + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.created_at || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.client_id || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.traffic_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>$" + valueNum + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.click_type || "-") + "</td><td style='padding:12px;border-bottom:1px solid #eee'>" + (ld.persistent_gclid || "-") + "</td></tr>";
   }
   h += "</tbody></table></div>"; 
   c.innerHTML = h; 
