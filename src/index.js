@@ -278,7 +278,7 @@ async function handleGetOfflineConversionLeads(request, env) {
     const sql = `
       SELECT id, client_id, value, traffic_type, click_type, persistent_gclid, created_at
       FROM leads 
-      WHERE persistent_gclid GLOB '[WGB]-*' 
+      WHERE persistent_gclid <> '' and persistent_gclid NOT LIKE 'F-%' 
         AND value > 1  
         AND reinstatement_submitted = 0
       `;
@@ -326,15 +326,18 @@ async function handleExportOfflineConversionToSheets(request, env) {
       let isGclid = false;
       let isGbraid = false;
       let isWbraid = false;
+      let cleanId = pid;
 
       if (pid.startsWith('W-')) {
         isWbraid = true;
+        cleanId = pid.substring(2);
       } else if (pid.startsWith('B-')) {
         isGbraid = true;
+        cleanId = pid.substring(2);
       } else if (pid.startsWith('G-')) {
         isGclid = true;
+        cleanId = pid.substring(2);
       } else {
-        // Fallback to GCLID if no known prefix matches (or 'O-' / 'E-')
         isGclid = true; 
       }
       
@@ -358,9 +361,9 @@ async function handleExportOfflineConversionToSheets(request, env) {
       // Map to columns A-H
       rows.push([
         lead.client_id,                                     // A: Order ID
-        isGclid ? pid : '',                                 // B: Google Click ID
-        isGbraid ? pid : '',                                // C: GBRAID
-        isWbraid ? pid : '',                                // D: WBRAID
+        isGclid ? cleanId : '',                                 // B: Google Click ID
+        isGbraid ? cleanId : '',                                // C: GBRAID
+        isWbraid ? cleanId : '',                                // D: WBRAID
         "organic_conversion",                               // E: Conversion Name
         formattedTime,                                      // F: Conversion Time (created_at + 8 hours)
         lead.value,                                         // G: Conversion Value
