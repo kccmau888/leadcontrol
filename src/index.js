@@ -278,8 +278,7 @@ async function handleGetOfflineConversionLeads(request, env) {
     const sql = `
       SELECT id, client_id, value, traffic_type, click_type, persistent_gclid, created_at
       FROM leads 
-      WHERE persistent_gclid <> '' 
-        AND (utm_source IS NULL OR utm_source NOT IN ('ig', 'fb', 'facebook', 'instagram'))
+      WHERE persistent_gclid GLOB '[WGB]-*' 
         AND value > 1  
         AND reinstatement_submitted = 0
       `;
@@ -328,14 +327,15 @@ async function handleExportOfflineConversionToSheets(request, env) {
       let isGbraid = false;
       let isWbraid = false;
 
-      if (pid.toUpperCase().includes('GCLID')) {
-        isGclid = true;
-      } else if (pid.startsWith('E') && pid.length > 50 && pid.length < 80) {
+      if (pid.startsWith('W-')) {
         isWbraid = true;
-      } else if (pid.startsWith('0') && pid.length < 50) {
+      } else if (pid.startsWith('B-')) {
         isGbraid = true;
+      } else if (pid.startsWith('G-')) {
+        isGclid = true;
       } else {
-        isGclid = true; // Fallback to GCLID
+        // Fallback to GCLID if no known prefix matches (or 'O-' / 'E-')
+        isGclid = true; 
       }
       
       // Format created_at (UTC) to Hong Kong Time (+0800)
